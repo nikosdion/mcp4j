@@ -1,0 +1,24 @@
+### Package XML file (copy generated at build time)
+/pkg_*.xml
+
+### Component non-repo files (copies generated at build/link time)
+/component/backend/mcp4j.xml
+
+### Composer
+/component/backend/vendor
+
+### Node modules
+/node_modules
+
+### Release files
+/release/*
+
+### Local build overrides
+/build/override.properties
+
+### Other generated files
+.DS_Store
+/.idea/laravel-idea.xml
+
+### Temporary plan files
+/.plans

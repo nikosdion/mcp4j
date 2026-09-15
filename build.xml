@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+
+<!--~
+  ~ @package   mcp4j
+  ~ @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+  ~ @license   GNU General Public License version 3, or later
+  -->
+
+<project name="MCP4j" description="MCP4j for Joomla" default="git">
+    <import file="${phing.dir}/../buildfiles/phing/common.xml" />
+
+    <!--
+    ====================================================================================================
+    File sets
+    ====================================================================================================
+    -->
+    <fileset dir="${dirs.component}" id="component" expandsymboliclinks="true">
+        <include name="api/**" />
+        <include name="backend/**" />
+        <include name="*" />
+
+        <exclude name="LICENSE.txt" />
+        <exclude name="script.mcp4j.php" />
+    </fileset>
+
+    <fileset dir="${dirs.release}" id="package">
+        <include name="com_*.zip" />
+        <include name="plg_webservices*.zip" />
+        <include name="pkg_*.xml" />
+        <include name="language/**"/>
+        <include name="*.txt" />
+        <include name="script.*.php" />
+    </fileset>
+
+    <!--
+    ====================================================================================================
+    Tasks - General
+    ====================================================================================================
+    -->
+
+    <target name="git" description="Makes only packages, not the documentation"
+            depends="new-release,setup-properties,component-packages">
+    </target>
+
+    <target name="documentation" description="Creates the documentation packages">
+        <echo>No documentation yet.</echo>
+    </target>
+</project>

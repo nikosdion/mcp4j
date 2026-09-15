@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--~
+  ~ @package   mcp4j
+  ~ @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+  ~ @license   GNU General Public License version 3, or later
+  -->
+
+<extension type="plugin" group="webservices" method="upgrade">
+    <name>PLG_WEBSERVICES_MCP4J</name>
+    <version>0.0.1</version>
+    <creationDate>2026-09-15</creationDate>
+    <author>Nicholas K. Dionysopoulos</author>
+    <authorEmail>nicholas@akeeba.com</authorEmail>
+    <authorUrl>https://www.dionysopoulos.me</authorUrl>
+    <copyright>Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd</copyright>
+    <license>GNU General Public License version 3, or later</license>
+    <description>PLG_WEBSERVICES_MCP4J_XML_DESCRIPTION</description>
+    <namespace path="src">Akeeba\Plugin\WebServices\Mcp4j</namespace>
+
+    <files>
+        <folder>services</folder>
+        <folder plugin="mcp4j">src</folder>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_webservices_mcp4j.ini</language>
+        <language tag="en-GB">en-GB/plg_webservices_mcp4j.sys.ini</language>
+    </languages>
+</extension>

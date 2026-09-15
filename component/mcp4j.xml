@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--~
+  ~ @package   mcp4j
+  ~ @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+  ~ @license   GNU General Public License version 3, or later
+  -->
+
+<extension type="component" method="upgrade">
+    <name>com_mcp4j</name>
+    <author>Nicholas K. Dionysopoulos</author>
+    <creationDate>2026-09-15</creationDate>
+    <copyright>Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd</copyright>
+    <license>GNU GPL v3 or later</license>
+    <authorEmail>nicholas@akeeba.com</authorEmail>
+    <authorUrl>https://www.dionysopoulos.me</authorUrl>
+    <version>0.0.1</version>
+    <description>COM_MCP4J_XML_DESCRIPTION</description>
+    <namespace path="src">Akeeba\Component\Mcp4j</namespace>
+
+    <install>
+        <sql>
+            <file driver="mysql" charset="utf8">sql/install.mysql.utf8.sql</file>
+            <file driver="postgresql" charset="utf8">sql/install.postgresql.utf8.sql</file>
+        </sql>
+    </install>
+
+    <uninstall>
+        <sql>
+            <file driver="mysql" charset="utf8">sql/uninstall.mysql.utf8.sql</file>
+            <file driver="postgresql" charset="utf8">sql/uninstall.postgresql.utf8.sql</file>
+        </sql>
+    </uninstall>
+
+    <update>
+        <schemas>
+            <schemapath type="mysql">sql/updates/mysql</schemapath>
+            <schemapath type="postgresql">sql/updates/postgresql</schemapath>
+        </schemas>
+    </update>
+
+    <administration>
+        <menu>COM_MCP4J</menu>
+
+        <files folder="backend">
+            <filename>access.xml</filename>
+            <filename>config.xml</filename>
+
+            <folder>language</folder>
+            <folder>services</folder>
+            <folder>sql</folder>
+            <folder>src</folder>
+            <folder>tmpl</folder>
+            <folder>vendor</folder>
+        </files>
+
+        <languages folder="backend">
+            <language tag="en-GB">language/en-GB/com_mcp4j.ini</language>
+            <language tag="en-GB">language/en-GB/com_mcp4j.sys.ini</language>
+        </languages>
+    </administration>
+
+    <api>
+        <files folder="api">
+            <folder>src</folder>
+        </files>
+    </api>
+</extension>

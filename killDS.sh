@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# @package   mcp4j
+# @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+# @license   GNU General Public License version 3, or later
+#
+
+find . -name .DS_Store -delete

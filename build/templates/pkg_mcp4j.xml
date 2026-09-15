@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--~
+  ~ @package   mcp4j
+  ~ @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+  ~ @license   GNU General Public License version 3, or later
+  -->
+
+<extension type="package" method="upgrade">
+    <name>pkg_mcp4j</name>
+    <author>Nicholas K. Dionysopoulos</author>
+    <creationDate>##DATE##</creationDate>
+    <packagename>mcp4j</packagename>
+    <version>##VERSION##</version>
+    <url>https://www.dionysopoulos.me</url>
+    <packager>Nicholas K. Dionysopoulos</packager>
+    <packagerurl>https://www.dionysopoulos.me</packagerurl>
+    <copyright>Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd</copyright>
+    <license>GNU GPL v3 or later</license>
+    <description>PKG_MCP4J_XML_DESCRIPTION</description>
+    <blockChildUninstall>true</blockChildUninstall>
+
+    <files>
+        <file type="component" id="com_mcp4j">com_mcp4j.zip</file>
+
+        <file type="plugin" group="webservices" id="mcp4j">plg_webservices_mcp4j.zip</file>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/pkg_mcp4j.sys.ini</language>
+    </languages>
+
+    <scriptfile>script.mcp4j.php</scriptfile>
+
+    <updateservers>
+        <server type="extension" priority="1" name="MCP4j for Joomla">https://raw.githubusercontent.com/nikosdion/pkg_mcp4j/main/updates/pkg_mcp4j.xml</server>
+    </updateservers>
+</extension>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--~
+  ~ @package   mcp4j
+  ~ @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+  ~ @license   GNU General Public License version 3, or later
+  -->
+<access component="com_mcp4j">
+    <section name="component">
+        <action name="core.admin" title="JACTION_ADMIN" />
+        <action name="core.manage" title="JACTION_MANAGE" />
+        <action name="core.edit" title="JACTION_EDIT" />
+    </section>
+</access>
