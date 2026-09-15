@@ -61,7 +61,11 @@ class ServerController extends ApiController
 	 */
 	public function dispatch()
 	{
-		$request = json_decode((string) $this->input->getRaw(), true);
+		// Deliberately not $this->input->getRaw(): depending on how the controller was constructed, $this->input
+		// is only guaranteed to be a Joomla\Input\Input, not the Joomla\Input\Json subclass that method lives on.
+		// php://input is safely re-readable here (we're not multipart/form-data), and ApiApplication's own Json
+		// input already read it the same way when it built the input object in the first place.
+		$request = json_decode((string) file_get_contents('php://input'), true);
 
 		if (json_last_error() !== JSON_ERROR_NONE || !is_array($request) || array_is_list($request))
 		{
@@ -149,7 +153,7 @@ class ServerController extends ApiController
 		if ($sessionId === '' || $userId === null)
 		{
 			$this->app->setHeader('status', $userId === null ? 401 : 400);
-			$this->app->close();
+			$this->send();
 
 			return;
 		}
@@ -161,7 +165,7 @@ class ServerController extends ApiController
 		}
 
 		$this->app->setHeader('status', 204);
-		$this->app->close();
+		$this->send();
 	}
 
 	// -----------------------------------------------------------------------------------------------------------
@@ -352,14 +356,32 @@ class ServerController extends ApiController
 	private function respondAccepted(): void
 	{
 		$this->app->setHeader('status', 202);
-		$this->app->close();
+		$this->send();
 	}
 
 	private function sendJson(array $body): void
 	{
 		$this->app->setHeader('Content-Type', 'application/json', true);
+		$this->send(json_encode($body));
+	}
 
-		echo json_encode($body);
+	/**
+	 * {@see \Joomla\CMS\Application\ApiApplication::close()} is a bare `exit()` — it never runs the
+	 * `respond()`/`sendHeaders()` pipeline that would otherwise turn our queued {@see setHeader()} calls
+	 * into real `header()` calls. Every response method funnels through here instead of calling
+	 * `$this->app->close()` directly: headers first (so `Mcp-Session-Id`, `Content-Type`, etc. are real
+	 * `header()` calls before any output exists), only then the body, only then `close()`. Doing this the
+	 * other way around — echo the body, then try to send headers — happens to often "work" only because
+	 * PHP hasn't flushed its output buffer yet, which is not something to rely on.
+	 */
+	private function send(?string $body = null): void
+	{
+		$this->app->sendHeaders();
+
+		if ($body !== null)
+		{
+			echo $body;
+		}
 
 		$this->app->close();
 	}

@@ -87,7 +87,12 @@ class SessionManager
 			return false;
 		}
 
-		if (strtotime($row->expires) < time())
+		// Deliberately not strtotime(): $row->expires is a naive "YYYY-MM-DD HH:MM:SS" string written in
+		// UTC (via Date::toSql()), but strtotime() interprets naive strings in the PHP process's default
+		// timezone. On a server whose default timezone isn't UTC, that silently shifts the comparison by
+		// the timezone offset — e.g. a session created seconds ago reads back as already expired. Date's
+		// constructor forces UTC while parsing, matching how the string was written.
+		if ((new Date($row->expires))->toUnix() < time())
 		{
 			$this->delete($sessionId);
 
