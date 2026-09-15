@@ -28,7 +28,30 @@ class SessionLifecycleTest extends AbstractE2ETestCase
 		$response = $this->rpc('tools/list', [], 2, $sessionId);
 
 		$this->assertStatus(200, $response);
-		$this->assertSame(['tools' => []], $response['json']['result'] ?? null);
+
+		$tools = $response['json']['result']['tools'] ?? null;
+
+		$this->assertIsArray($tools);
+		$this->assertNotSame([], $tools, 'tools/list must advertise at least the Tags tools.');
+
+		$tagsList = null;
+
+		foreach ($tools as $tool)
+		{
+			$this->assertIsArray($tool);
+			$this->assertArrayHasKey('name', $tool);
+			$this->assertArrayHasKey('description', $tool);
+			$this->assertArrayHasKey('inputSchema', $tool);
+			$this->assertSame('object', $tool['inputSchema']['type'] ?? null);
+
+			if ($tool['name'] === 'tags_list')
+			{
+				$tagsList = $tool;
+			}
+		}
+
+		$this->assertNotNull($tagsList, 'tools/list must advertise tags_list.');
+		$this->assertTrue($tagsList['annotations']['readOnlyHint'] ?? null, 'tags_list must be annotated readOnlyHint: true.');
 	}
 
 	public function testToolsCallWithAnUnknownToolNameIsAJsonRpcError(): void
