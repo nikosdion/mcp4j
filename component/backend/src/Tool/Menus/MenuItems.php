@@ -139,7 +139,7 @@ class MenuItems extends AbstractMenuItemsTool
 		#[Schema(description: 'Parent menu item ID, 1 for root')]
 		?int $parentId = null,
 		#[Schema(
-			description: 'Publish state: null=no change, 0=unpublished, 1=published, 2=archived, -2=trashed',
+			description: 'Publish state: 0=unpublished, 1=published, 2=archived, -2=trashed',
 			enum: [null, 0, 1, 2, -2]
 		)]
 		?int $published = null,

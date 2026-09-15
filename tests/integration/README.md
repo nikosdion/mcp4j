@@ -233,14 +233,15 @@ test.
 
 ## What's covered
 
+### Protocol / harness (not tool-specific)
+
 - `InitializeTest` — `initialize`: the result shape, session minting, one session per call,
   unauthenticated/garbage-token refusal, and that an incoming `Mcp-Session-Id` on `initialize` itself
   is ignored rather than "resumed".
-- `SessionLifecycleTest` — `tools/list`, `tools/call` (currently always "unknown tool" — there are no
-  real tools yet), `ping`, notifications, and the full `Mcp-Session-Id` lifecycle: missing/garbage
-  session refusal, `DELETE` termination, and — the part a fake-looking pass could hide — that a
-  *refused* `DELETE` (wrong token) provably leaves the session usable afterward, not just that the
-  `DELETE` itself reported an error.
+- `SessionLifecycleTest` — `tools/list`, `tools/call`, `ping`, notifications, and the full
+  `Mcp-Session-Id` lifecycle: missing/garbage session refusal, `DELETE` termination, and — the part a
+  fake-looking pass could hide — that a *refused* `DELETE` (wrong token) provably leaves the session
+  usable afterward, not just that the `DELETE` itself reported an error.
 - `ProtocolErrorsTest` — malformed JSON, batching (rejected — MCP dropped it in the 2025-06-18
   revision), a missing `jsonrpc` member, the `id` being echoed back on an otherwise-invalid request,
   and a request sent with no `Accept` header at all (curl always sends `Accept: */*` by default, so
@@ -250,8 +251,51 @@ test.
   with a different user's token, in both directions; `AbstractToolTestCase::uniqueName()`/
   `uniqueAlias()` produce the expected shapes. Skips (not fails) its low-privilege assertions when
   `MCP4J_LOWPRIV_TOKEN` isn't set.
+- `Options/ComponentOptionsTest` — the `tool_categories`/`tool_allowlist`/`read_only`/`minimal_schema`
+  filters on `tools/list`/`tools/call`, applied in the documented order (allow-list overrides
+  categories; read-only narrows whatever those already selected).
 
-Not yet covered, because the feature doesn't exist yet: any real MCP tool. Once `ServerController`'s
-`handleToolsList()`/`handleToolsCall()`/`dispatchMethod()` grow actual tools, this suite (via
-`AbstractToolTestCase` — see "Writing tool tests" above) is the right place for their end-to-end
-coverage.
+### Per tool category
+
+One test class per tool class (`tests/integration/src/Tests/<Category>/<Class>Test.php`), each covering
+at minimum: list shape + a working filter, full create→read→update→trash→delete lifecycle (partial
+update leaves untouched fields alone), read/update of a nonexistent id → `Not found`, ACL refusal for
+the low-privilege user (read and write) with proof nothing was written, and absence of every sensitive
+field from that category's whitelist — see `.plans/00-conventions.md` §7 for the exact contract every
+class follows. Notable extras beyond the baseline:
+
+- **Tags, Content, Banners, Contact, Newsfeeds** — nested-set category lifecycles (parent/child
+  `level`/`path`), cross-extension isolation (a Banners category id is `Not found` through the Content
+  category tools and vice versa), Markdown→HTML conversion for article `introtext`/`fulltext`.
+- **Users, Groups, Levels** — self-protection refusals (can't delete/block your own account), Super
+  User/root-group protections, weak-password rejection, and that no response ever contains
+  `password`/`otpKey`/`otep`/`activation`/`params`.
+- **Menus, MenuItems (site + admin)** — reserved menutype refusal, component-link building
+  (`request[]` merged into `link`), URL-scheme validation (`javascript:` rejected), the default home
+  item protected from deletion, cross-client isolation (site vs. administrator).
+- **Modules, Templates styles (site + admin)** — module-type immutability on update, template-style
+  default-switching semantics and menu-item-assignment preservation, cross-client isolation.
+- **Config** — secret redaction on every read (`password`/`secret`/... always `********`), redaction
+  placeholders never overwriting a live secret on update.
+- **Languages (overrides, packages, content languages)** — override search/refresh, language-tag
+  validation, relative (never absolute) file paths in search results.
+- **Fields / ContentHistory / Privacy** — context validation, version-keep/delete semantics,
+  export/removal request mapping; `token` never present in consent output.
+- **Media** — folder vs. file creation semantics, path traversal / disallowed-extension refusal, no
+  absolute server paths in any output.
+- **JoomlaUpdate** — health-check/getupdate shape on Joomla ≥ 5.4 (tools absent entirely on 4.4); the
+  destructive `prepare`/`download`/`finalize` steps are exercised only for their refusal/validation
+  paths, never actually run against the shared Docker site.
+- **Panopticon** (`requireToolsOrSkip` — skips entirely without the connector zip in
+  `inbox/extensions/`) — core-update status/changesource/checksum flow, extension updates/update
+  sites, template overrides, Admin Tools WAF/scanner controls, Akeeba Backup status; every class also
+  proves Super-User-only enforcement. Irreversible/network-heavy actions (core download/activate,
+  live extension updates) are asserted only for their safe/refusal paths.
+- **Tickets** (`requireToolsOrSkip`, and skips entirely on Joomla 4.4 since ATS refuses to install
+  there) — categories, ticket/post CRUD with custom-field (`com_fields`) merging, manager-only field
+  protections, attachment upload/download/ZIP-inlining with size limits, manager notes; Pro-only tools
+  report a clear tool error on ATS Core instead of failing.
+
+Every category's E2E class also asserts the write-path secret-leak guard on at least one call (a tool
+argument containing the super user's own API token is refused before the tool runs) where plan 03
+didn't already cover it directly.

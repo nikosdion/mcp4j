@@ -140,13 +140,11 @@ a breaking rework later.
 
 - `#__mcp4j_sessions` schema, the `session_ttl` and `prune_on_request` component
   options, `Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager`, and
-  `plg_task_mcp4j` exist.
-- `ServerController` now implements the full request envelope: JSON-RPC 2.0
+  `plg_task_mcp4j` exist and are unchanged from the design above.
+- `ServerController` implements the full request envelope: JSON-RPC 2.0
   parsing (batching intentionally rejected — MCP dropped it in 2025-06-18),
   `initialize` (mints a session, ignores any `Mcp-Session-Id` sent with it),
-  `notifications/initialized`, `ping`, `tools/list` (currently always empty),
-  `tools/call` (currently always "unknown tool" — `-32602`, thrown as a
-  {@see Akeeba\Component\Mcp4j\Api\Exception\JsonRpcException}), and
+  `notifications/initialized`, `ping`, `tools/list`, `tools/call`, and
   `DELETE .../server` → `SessionManager::delete()`. Every method other than
   `initialize`/`notifications/initialized` goes through
   `ServerController::requireSession()`, which resolves the bearer-token user,
@@ -154,9 +152,39 @@ a breaking rework later.
   `dispatch()` always calls `SessionManager::persist()` before responding
   (before the notification/error/result branch, so a session's `last_active` is
   refreshed even on a JSON-RPC-level error).
-- Still to build: the actual Joomla-facing tool surface (`handleToolsList()` /
-  `handleToolsCall()` / `dispatchMethod()` in `ServerController` are the seam —
-  swap the empty list and the "unknown tool" throw for a real tool registry).
+- `tools/list` and `tools/call` are now backed by the real 249-tool registry
+  (`Mcp\Support\ToolRegistry`, `Mcp\ToolDispatcher`) — see `CLAUDE.md` and
+  `README.md` for the tool surface itself; this document only covers session
+  handling.
+- **Pagination deliberately does *not* use session-scoped list state.** Every
+  `*_list` tool takes its own explicit `pageLimit`/`pageOffset` arguments
+  (clamped/defaulted by the bridge — null `pageLimit` → 20, clamped `1..100`;
+  null `pageOffset` → 0) instead of relying on Joomla's `list.limit`/
+  `list.start` surviving in `$session` between calls the way a backend list
+  view's pagination does. Reasons, in order of weight:
+  1. **Correctness under concurrent/interleaved tool calls.** An MCP client
+     (or the LLM driving it) routinely calls several different `*_list` tools
+     in the same session — `content_articles_list` then `users_list` then
+     back to `content_articles_list` with a different filter. Session-scoped
+     `list.limit`/`list.start` is keyed per Joomla list-model "context", not
+     per MCP tool call, so the second `content_articles_list` call would
+     silently inherit pagination state left over from an unrelated call
+     unless every tool went out of its way to reset it — explicit arguments
+     make each call self-contained and its result reproducible regardless of
+     call history.
+  2. **The original `joomla-mcp-php` tools already work this way** (explicit
+     `pageLimit`/`pageOffset` parameters calling the JSON:API's `page[limit]`/
+     `page[offset]`), so this preserves interface fidelity (00 §2) for free
+     instead of requiring a deviation.
+  3. It keeps every `*_list` tool call idempotent and independent of session
+     state entirely for this one concern, which simplifies both the tools
+     themselves and their E2E tests (no "previous call's pagination" fixture
+     state to set up or reset).
+  The `$session` object (and the whole snapshot-restore mechanism above) is
+  still real and still used for anything Joomla's own model/controller code
+  reads or writes through it during a request (e.g. incidental state some
+  third-party model touches) — only *pagination specifically* was deliberately
+  kept out of it, by tool design, not by a limitation of the mechanism.
 
 ## Open questions to resume on
 

@@ -183,14 +183,15 @@ abstract class AbstractE2ETestCase extends TestCase
 		if ($raw === false)
 		{
 			$error = curl_error($ch);
-			curl_close($ch);
 
 			$this->fail(sprintf('cURL request %s %s failed: %s', $httpMethod, $url, $error));
 		}
 
 		$status     = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-		curl_close($ch);
+
+		// curl_close() has been a no-op since PHP 8.0 (handles are freed by the garbage collector) and is
+		// deprecated outright since PHP 8.5 — calling it only produces a deprecation notice for no benefit.
 
 		$rawHeaders = substr((string) $raw, 0, $headerSize);
 		$rawResponseBody = substr((string) $raw, $headerSize);

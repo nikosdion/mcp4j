@@ -44,9 +44,9 @@ class Categories extends AbstractCategoriesTool
 			enum: [null, 0, 1, 2, -2]
 		)]
 		?int $filterState = null,
-		#[Schema(description: 'Filter by language code, or "*" for all languages', pattern: '^(\*|[a-z]{2}(-[A-Z]{2})?)$')]
+		#[Schema(description: 'Filter by language code, or "*" for all languages')]
 		?string $filterLanguage = null,
-		#[Schema(description: 'Filter by category nesting level', minimum: 1)]
+		#[Schema(description: 'Filter by category nesting level')]
 		?int $filterLevel = null,
 		#[Schema(description: 'Maximum number of items to return per page', minimum: 1)]
 		?int $pageLimit = null,
@@ -88,7 +88,7 @@ class Categories extends AbstractCategoriesTool
 		int $published = 1,
 		#[Schema(description: 'The Joomla! viewing access level for the category')]
 		?int $access = null,
-		#[Schema(description: 'Language code for the category, or "*" for all languages', pattern: '^(\*|[a-z]{2}(-[A-Z]{2})?)$')]
+		#[Schema(description: 'Language code for the category, or "*" for all languages')]
 		string $language = '*',
 		#[Schema(description: 'Category description')]
 		?string $description = null,
@@ -120,13 +120,13 @@ class Categories extends AbstractCategoriesTool
 		#[Schema(description: 'Parent category ID, 0 for root')]
 		?int $parentId = null,
 		#[Schema(
-			description: 'Publish state: null=no change, 0=unpublished, 1=published, 2=archived, -2=trashed',
+			description: 'Publish state: 0=unpublished, 1=published, 2=archived, -2=trashed',
 			enum: [null, 0, 1, 2, -2]
 		)]
 		?int $published = null,
 		#[Schema(description: 'The Joomla! viewing access level for the category')]
 		?int $access = null,
-		#[Schema(description: 'Language code for the category, or "*" for all languages', pattern: '^(\*|[a-z]{2}(-[A-Z]{2})?)$')]
+		#[Schema(description: 'Language code for the category, or "*" for all languages')]
 		?string $language = null,
 		#[Schema(description: 'Category description')]
 		?string $description = null,

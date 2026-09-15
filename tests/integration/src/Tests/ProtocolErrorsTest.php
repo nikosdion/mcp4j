@@ -102,7 +102,9 @@ class ProtocolErrorsTest extends AbstractE2ETestCase
 
 		$status     = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-		curl_close($ch);
+
+		// curl_close() has been a no-op since PHP 8.0 and is deprecated outright since PHP 8.5 — see
+		// AbstractE2ETestCase::request()'s identical comment.
 
 		$rawHeaders = substr((string) $raw, 0, $headerSize);
 		$rawResponseBody = substr((string) $raw, $headerSize);
