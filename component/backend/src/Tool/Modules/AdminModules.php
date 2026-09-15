@@ -1,0 +1,178 @@
+<?php
+/**
+ * @package   mcp4j
+ * @copyright Copyright (c)2026 Nicholas K. Dionysopoulos / Akeeba Ltd
+ * @license   GNU General Public License version 3, or later
+ */
+
+namespace Akeeba\Component\Mcp4j\Administrator\Tool\Modules;
+
+defined('_JEXEC') || die;
+
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Attribute\McpTool;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Attribute\Schema;
+use Akeeba\Component\Mcp4j\Administrator\Shared\Modules\AbstractModulesTool;
+
+/**
+ * MCP tools for Joomla! administrator module management (`#__modules` where `client_id = 1`).
+ *
+ * Ported from the original `joomla-mcp-php` project's `src/Server/Modules/AdminModules.php` — identical to
+ * {@see \Akeeba\Component\Mcp4j\Administrator\Tool\Modules\SiteModules} except for tool names/descriptions
+ * and the client id; see that class and `.plans/07-modules-templates.md` for the shared implementation and
+ * deviations.
+ *
+ * @since  0.0.1
+ */
+class AdminModules extends AbstractModulesTool
+{
+	protected function clientId(): int
+	{
+		return 1;
+	}
+
+	#[McpTool(
+		name: 'modules_admin_list',
+		description: 'List existing administrator modules',
+		readOnlyHint: true,
+	)]
+	public function listModules(
+		#[Schema(description: 'Search filter for the module title')]
+		?string $filterSearch = null,
+		#[Schema(
+			description: 'Filter by publish state: 0=unpublished, 1=published, 2=archived, -2=trashed',
+			enum: [null, 0, 1, 2, -2]
+		)]
+		?int $filterState = null,
+		#[Schema(description: 'Filter by module position')]
+		?string $filterPosition = null,
+		#[Schema(description: 'Filter by module type (e.g. mod_menu)')]
+		?string $filterModule = null,
+		#[Schema(description: 'Filter by access level')]
+		?int $filterAccess = null,
+		#[Schema(description: 'Maximum number of items to return per page', minimum: 1)]
+		?int $pageLimit = null,
+		#[Schema(description: 'Starting record offset for pagination (0-based)', minimum: 0)]
+		?int $pageOffset = null
+	): array
+	{
+		return $this->doList($filterSearch, $filterState, $filterPosition, $filterModule, $filterAccess, $pageLimit, $pageOffset);
+	}
+
+	#[McpTool(
+		name: 'modules_admin_read',
+		description: 'Retrieve the information of the specified administrator module',
+		readOnlyHint: true,
+	)]
+	public function readModule(
+		#[Schema(description: 'The ID of the module to retrieve')]
+		int $id
+	): array
+	{
+		return $this->doRead($id);
+	}
+
+	#[McpTool(
+		name: 'modules_admin_create',
+		description: 'Create a new administrator module'
+	)]
+	public function createModule(
+		#[Schema(description: 'Module title', minLength: 1, maxLength: 255)]
+		string $title,
+		#[Schema(description: 'Module type (e.g. mod_menu)', minLength: 1)]
+		string $module,
+		#[Schema(
+			description: 'Publish state: 0=unpublished, 1=published',
+			enum: [0, 1]
+		)]
+		int $published = 1,
+		#[Schema(description: 'The Joomla! viewing access level for the module')]
+		?int $access = null,
+		#[Schema(description: 'Module position')]
+		?string $position = null,
+		#[Schema(description: 'Optional note for the module')]
+		?string $note = null,
+		#[Schema(description: 'Module ordering')]
+		?int $ordering = null,
+		#[Schema(description: 'Language code for the module, or "*" for all languages', pattern: '^(\*|[a-z]{2}(-[A-Z]{2})?)$')]
+		string $language = '*',
+		#[Schema(description: 'Menu assignment')]
+		?string $assignment = null,
+		#[Schema(description: 'Module parameters as a JSON string or object')]
+		array|string|null $params = null
+	): array
+	{
+		return $this->doCreate($title, $module, $published, $access, $position, $note, $ordering, $language, $assignment, $params);
+	}
+
+	#[McpTool(
+		name: 'modules_admin_update',
+		description: 'Update an existing administrator module',
+		idempotentHint: true,
+	)]
+	public function updateModule(
+		#[Schema(description: 'The ID of the module to modify')]
+		int $id,
+		#[Schema(description: 'Module title', minLength: 1, maxLength: 255)]
+		?string $title = null,
+		#[Schema(description: 'Module type (e.g. mod_menu)', minLength: 1)]
+		?string $module = null,
+		#[Schema(
+			description: 'Publish state: null=no change, 0=unpublished, 1=published, -2=trashed',
+			enum: [null, 0, 1, -2]
+		)]
+		?int $published = null,
+		#[Schema(description: 'The Joomla! viewing access level for the module')]
+		?int $access = null,
+		#[Schema(description: 'Module position')]
+		?string $position = null,
+		#[Schema(description: 'Optional note for the module')]
+		?string $note = null,
+		#[Schema(description: 'Module ordering')]
+		?int $ordering = null,
+		#[Schema(description: 'Language code for the module, or "*" for all languages', pattern: '^(\*|[a-z]{2}(-[A-Z]{2})?)$')]
+		?string $language = null,
+		#[Schema(description: 'Menu assignment')]
+		?string $assignment = null,
+		#[Schema(description: 'Module parameters as a JSON string or object')]
+		array|string|null $params = null
+	): array
+	{
+		return $this->doUpdate($id, $title, $module, $published, $access, $position, $note, $ordering, $language, $assignment, $params);
+	}
+
+	#[McpTool(
+		name: 'modules_admin_trash',
+		description: 'Moves an administrator module to the trash by setting its state to -2',
+		destructiveHint: true,
+	)]
+	public function trashModule(
+		#[Schema(description: 'The ID of the module to trash')]
+		int $id
+	): array
+	{
+		return $this->doTrash($id);
+	}
+
+	#[McpTool(
+		name: 'modules_admin_delete',
+		description: 'Permanently deletes an administrator module. Automatically trashes it first if needed.',
+		destructiveHint: true,
+	)]
+	public function deleteModule(
+		#[Schema(description: 'The ID of the module to delete')]
+		int $id
+	): array
+	{
+		return $this->doDelete($id);
+	}
+
+	#[McpTool(
+		name: 'modules_admin_types',
+		description: 'List available administrator module types',
+		readOnlyHint: true,
+	)]
+	public function listModuleTypes(): array
+	{
+		return $this->doTypes();
+	}
+}
