@@ -14,6 +14,7 @@ use Akeeba\Component\ATS\Administrator\Model\PostsModel;
 use Akeeba\Component\ATS\Administrator\Model\TicketModel;
 use Akeeba\Component\ATS\Administrator\Model\TicketsModel;
 use Akeeba\Component\Mcp4j\Administrator\Bridge\Support\ItemNormalizer;
+use Akeeba\Component\Mcp4j\Administrator\Bridge\Support\Pagination;
 use Akeeba\Component\Mcp4j\Administrator\Bridge\Support\TagIds;
 use Akeeba\Component\Mcp4j\Administrator\Mapper\Tickets\PostMapper;
 use Akeeba\Component\Mcp4j\Administrator\Mapper\Tickets\TicketMapper;
@@ -87,14 +88,59 @@ class Tickets extends AbstractAtsTool
 			throw new ToolException($e->getMessage(), 0, $e);
 		}
 
+		// security.md M4: TicketsModel's own filtering is a plain Joomla content view-access level, not
+		// the per-category manage-ACL check tickets_tickets_read enforces via requireViewTicket() ->
+		// getTicketPrivileges(). Restrict the query to exactly the categories Permissions::isManager()
+		// (via getManagerCategories()) says this caller actually manages, on top of the per-row
+		// ownership/invitation/privacy check listPageVisible() applies below.
+		$userId            = (int) $this->getUser()->id;
+		$allowedCategories = array_values(array_unique(array_map(
+			'intval',
+			Permissions::getManagerCategories($userId)
+		)));
+
+		if ($filterCategory !== null)
+		{
+			// Confirms $filterCategory is a real com_ats category before deciding whether it's denied —
+			// requireAtsCategory() throws "Not found" for a nonexistent/foreign id, matching every other
+			// tool in this category; a real-but-denied category is a "Permission denied", matching
+			// createTicket()'s own core.create denial for the same asset shape.
+			$this->requireAtsCategory($filterCategory);
+
+			if (!in_array($filterCategory, $allowedCategories, true))
+			{
+				throw $this->denied('core.manage', $filterCategory);
+			}
+
+			$state['filter.catid'] = [$filterCategory];
+		}
+		elseif ($allowedCategories === [])
+		{
+			// TicketsModel::getListQuery() treats an EMPTY filter.catid as "no category filter at all"
+			// (whereIn() is skipped when the array is empty), which would otherwise return every category's
+			// tickets instead of none — verified by reading its filter block directly. Short-circuit here
+			// rather than relying on whereIn([]) to fail closed.
+			[$limit, $offset] = Pagination::normalise($pageLimit, $pageOffset);
+
+			return [
+				'items'      => [],
+				'pagination' => ['total' => 0, 'limit' => $limit, 'offset' => $offset],
+			];
+		}
+		else
+		{
+			$state['filter.catid'] = $allowedCategories;
+		}
+
 		/** @var TicketsModel $model */
 		$model = $this->createModel('com_ats', 'Tickets');
 
-		return $this->listPage(
+		return $this->listPageVisible(
 			$model,
 			$state,
 			$pageLimit,
 			$pageOffset,
+			fn (object $item): bool => $this->ticketRowVisible($item),
 			fn (object $item): array => $this->toTicketRow($item, TicketMapper::LIST_FIELDS)
 		);
 	}

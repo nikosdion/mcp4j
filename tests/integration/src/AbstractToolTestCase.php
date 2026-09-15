@@ -32,6 +32,29 @@ abstract class AbstractToolTestCase extends AbstractE2ETestCase
 	protected static string $lowPrivToken = '';
 
 	/**
+	 * The "Author" group (group 3) API token, provisioned by
+	 * tests/integration/docker/provision-author-user.php and passed in via MCP4J_AUTHOR_TOKEN — see
+	 * run-tests.sh's provision_author(). A stock Joomla install's Author group has `core.create` but
+	 * NOT `core.edit.state` on `com_content` by default — used to test security.md finding M3 (whether
+	 * `content_articles_create`'s default-published `$state` path can be used to publish without
+	 * `core.edit.state`). Empty when the harness didn't provide one (e.g. a test run outside
+	 * run-tests.sh); {@see callToolAsAuthor()} skips rather than fails in that case.
+	 */
+	protected static string $authorToken = '';
+
+	/**
+	 * The ATS scoped-manager API token, provisioned by
+	 * tests/integration/docker/provision-ats-scoped-manager.php and passed in via
+	 * MCP4J_SCOPED_MANAGER_TOKEN — see run-tests.sh's provision_scoped_manager(). This user holds
+	 * `core.manage` on the `com_ats` component root (a genuine ATS manager) but is explicitly DENIED
+	 * `core.manage`/`core.admin` at one specific ATS category ("MCP4j Scoped Denied") — the exact shape
+	 * security.md findings M4/M5 describe. Empty when the harness didn't provide one (e.g. a test run
+	 * outside run-tests.sh, or com_ats isn't installed on this run); {@see callToolAsScopedManager()}
+	 * skips rather than fails in that case.
+	 */
+	protected static string $scopedManagerToken = '';
+
+	/**
 	 * token => Mcp-Session-Id, cached for the lifetime of the current test class only (reset in
 	 * setUpBeforeClass()).
 	 */
@@ -54,6 +77,8 @@ abstract class AbstractToolTestCase extends AbstractE2ETestCase
 		parent::setUpBeforeClass();
 
 		self::$lowPrivToken = getenv('MCP4J_LOWPRIV_TOKEN') ?: '';
+		self::$authorToken  = getenv('MCP4J_AUTHOR_TOKEN') ?: '';
+		self::$scopedManagerToken = getenv('MCP4J_SCOPED_MANAGER_TOKEN') ?: '';
 		self::$sessions     = [];
 		self::$toolNames    = null;
 	}
@@ -237,6 +262,38 @@ abstract class AbstractToolTestCase extends AbstractE2ETestCase
 		}
 
 		return $this->callTool($name, $arguments, self::$lowPrivToken);
+	}
+
+	/**
+	 * Calls a tool as the "Author" group user, skipping the test (not failing it) when no Author token
+	 * was provided by the harness.
+	 *
+	 * @return array{isError: bool, text: string, data: mixed, raw: array}
+	 */
+	protected function callToolAsAuthor(string $name, array $arguments = []): array
+	{
+		if (self::$authorToken === '')
+		{
+			$this->markTestSkipped('MCP4J_AUTHOR_TOKEN is not set — run via tests/integration/run-tests.sh.');
+		}
+
+		return $this->callTool($name, $arguments, self::$authorToken);
+	}
+
+	/**
+	 * Calls a tool as the ATS scoped-manager user (see {@see self::$scopedManagerToken}), skipping the
+	 * test (not failing it) when no scoped-manager token was provided by the harness.
+	 *
+	 * @return array{isError: bool, text: string, data: mixed, raw: array}
+	 */
+	protected function callToolAsScopedManager(string $name, array $arguments = []): array
+	{
+		if (self::$scopedManagerToken === '')
+		{
+			$this->markTestSkipped('MCP4J_SCOPED_MANAGER_TOKEN is not set — run via tests/integration/run-tests.sh.');
+		}
+
+		return $this->callTool($name, $arguments, self::$scopedManagerToken);
 	}
 
 	protected function assertPermissionDenied(array $result, string $message = ''): void

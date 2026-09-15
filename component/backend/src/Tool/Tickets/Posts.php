@@ -12,6 +12,7 @@ defined('_JEXEC') || die;
 use Akeeba\Component\ATS\Administrator\Helper\Permissions;
 use Akeeba\Component\ATS\Administrator\Model\PostModel;
 use Akeeba\Component\ATS\Administrator\Model\PostsModel;
+use Akeeba\Component\ATS\Administrator\Table\TicketTable;
 use Akeeba\Component\Mcp4j\Administrator\Bridge\Support\ItemNormalizer;
 use Akeeba\Component\Mcp4j\Administrator\Mapper\Tickets\PostMapper;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Attribute\McpTool;
@@ -35,12 +36,13 @@ use Akeeba\Component\Mcp4j\Administrator\Shared\AbstractAtsTool;
 class Posts extends AbstractAtsTool
 {
 	/**
-	 * Memoises the ticket -> category lookup used by {@see self::listPosts()}, which lists posts across
-	 * every ticket and would otherwise re-load the same ticket once per post.
+	 * Memoises the ticket_id -> TicketTable lookup used by {@see self::listPosts()}, which lists posts
+	 * across every ticket and would otherwise re-load the same ticket once per post — both for its catid
+	 * (enrichment) and, since security.md M4's fix, for its per-row visibility check.
 	 *
-	 * @var  array<int, int>
+	 * @var  array<int, TicketTable>
 	 */
-	private array $ticketCatidCache = [];
+	private array $ticketCache = [];
 
 	#[McpTool(
 		name: 'tickets_posts_list',
@@ -57,16 +59,36 @@ class Posts extends AbstractAtsTool
 		$this->bootAts();
 		$this->requireAtsManager();
 
+		// security.md M4: Permissions::getTicketPrivileges()'s (and therefore ticketRowVisible()'s) own
+		// 'view' formula grants access to ANY public ticket whose category's plain Joomla content
+		// view-access level the caller holds, REGARDLESS of manage-ACL — confirmed the hard way, by a
+		// first version of this fix that checked ticketRowVisible() alone and was caught by this class's
+		// own testPostsListExcludesDeniedDepartmentReplies() E2E test leaking a public ticket's post from
+		// a category-denied department (ATS categories default to the Public access level, which nearly
+		// every caller holds). ticketRowVisible() alone is therefore NOT sufficient to enforce a
+		// department-level manage-ACL Deny; the category-allowlist check below (identical to what
+		// Tickets::listTickets() applies via filter.catid) is required on top of it, exactly as
+		// Tickets::listTickets() does.
+		$allowedCategories = array_map('intval', Permissions::getManagerCategories((int) $this->getUser()->id));
+
 		/** @var PostsModel $model */
 		$model = $this->createModel('com_ats', 'Posts');
 
 		// PostsModel's own state defaults apply unmodified: published-only (filter.enabled = 1),
-		// ordered p.created ASC, restricted to the categories whose view level the user holds.
-		return $this->listPage(
+		// ordered p.created ASC, restricted to the categories whose view level the user holds — but see
+		// listPageVisible() below: security.md M4 found that filter alone insufficient (no manage-ACL/
+		// privacy re-check), so every row's parent ticket is additionally re-checked the same way
+		// tickets_tickets_list does: category-membership in getManagerCategories() AND ticketRowVisible().
+		return $this->listPageVisible(
 			$model,
 			[],
 			$pageLimit,
 			$pageOffset,
+			function (object $item) use ($allowedCategories): bool {
+				$ticket = $this->ticketForId((int) ($item->ticket_id ?? 0));
+
+				return in_array((int) $ticket->catid, $allowedCategories, true) && $this->ticketRowVisible($ticket);
+			},
 			function (object $item): array {
 				$catid = $this->catidForTicket((int) ($item->ticket_id ?? 0));
 
@@ -290,13 +312,13 @@ class Posts extends AbstractAtsTool
 		return $this->shape($arr, $fields, PostMapper::INT_FIELDS);
 	}
 
+	private function ticketForId(int $ticketId): TicketTable
+	{
+		return $this->ticketCache[$ticketId] ??= $this->loadTicketTable($ticketId);
+	}
+
 	private function catidForTicket(int $ticketId): int
 	{
-		if (!array_key_exists($ticketId, $this->ticketCatidCache))
-		{
-			$this->ticketCatidCache[$ticketId] = (int) $this->loadTicketTable($ticketId)->catid;
-		}
-
-		return $this->ticketCatidCache[$ticketId];
+		return (int) $this->ticketForId($ticketId)->catid;
 	}
 }

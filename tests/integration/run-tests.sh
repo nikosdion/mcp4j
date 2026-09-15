@@ -327,7 +327,66 @@ provision_lowpriv() {
 	ok "Low-privilege token acquired"
 }
 
-# Writes both tokens to docker/.tokens (shell-sourceable), so quick.sh can reuse them without
+AUTHOR_USER="author"
+AUTHOR_TOKEN=""
+
+# Provisions an "Author" group (group 3) API user and mints its token — for security.md finding M3's
+# live test: a stock Joomla install's Author group already has core.create but NOT core.edit.state on
+# com_content (verified against a live install's #__assets rules, not assumed — see
+# provision-author-user.php's docblock), the exact shape needed to test whether
+# content_articles_create's default-published ($state omitted/1) path can be used to publish an article
+# without core.edit.state.
+provision_author() {
+	log "Provisioning the Author-group API user (${AUTHOR_USER})"
+	DC exec -T web php /app/tests/integration/docker/provision-author-user.php "${AUTHOR_USER}" \
+		|| die "Author-group user provisioning failed."
+	ok "Author-group user ready"
+
+	log "Provisioning a Joomla API token for ${AUTHOR_USER}"
+	local out
+	out="$(DC exec -T web php /app/tests/integration/docker/provision-token.php "${AUTHOR_USER}")" \
+		|| die "Author-group token generation failed."
+
+	AUTHOR_TOKEN="$(printf '%s\n' "${out}" | tr -d '\r' | awk 'NF { line = $0 } END { print line }')"
+
+	[ -n "${AUTHOR_TOKEN}" ] || die "Could not extract a non-empty API token for ${AUTHOR_USER}."
+	ok "Author-group token acquired"
+}
+
+SCOPED_MANAGER_USER="ats-scoped-manager"
+SCOPED_MANAGER_TOKEN=""
+
+# Provisions an ATS "manager" API user who is denied a specific department at category level — for
+# security.md findings M4/M5's live regression tests (tests/integration/src/Tests/Tickets/*ScopedAcl*): a
+# user with core.manage at the com_ats component root (so requireAtsManager() passes and every *_list
+# tool's list-level gate is satisfied) but explicitly Denied core.manage/core.admin at one specific ATS
+# category ("MCP4j Scoped Denied") — see provision-ats-scoped-manager.php's own docblock for the full ACL
+# shape and why. A no-op (exit 0) if com_ats isn't installed on this run, matching how the Tickets test
+# classes themselves self-skip.
+provision_scoped_manager() {
+	log "Provisioning the ATS scoped-manager API user (${SCOPED_MANAGER_USER})"
+	DC exec -T web php /app/tests/integration/docker/provision-ats-scoped-manager.php "${SCOPED_MANAGER_USER}" \
+		|| die "ATS scoped-manager user provisioning failed."
+	ok "ATS scoped-manager user ready"
+
+	log "Provisioning a Joomla API token for ${SCOPED_MANAGER_USER}"
+	local out
+	out="$(DC exec -T web php /app/tests/integration/docker/provision-token.php "${SCOPED_MANAGER_USER}")" \
+		|| die "ATS scoped-manager token generation failed."
+
+	SCOPED_MANAGER_TOKEN="$(printf '%s\n' "${out}" | tr -d '\r' | awk 'NF { line = $0 } END { print line }')"
+
+	# com_ats not installed on this run: provision-ats-scoped-manager.php no-ops and there's no user for
+	# provision-token.php to mint a token for either — leave SCOPED_MANAGER_TOKEN empty rather than dying,
+	# the same way the Tickets test classes self-skip without ATS installed.
+	if [ -z "${SCOPED_MANAGER_TOKEN}" ]; then
+		warn "No ATS scoped-manager token acquired (com_ats not installed on this run?) — M4/M5 regression tests will self-skip."
+	else
+		ok "ATS scoped-manager token acquired"
+	fi
+}
+
+# Writes every token to docker/.tokens (shell-sourceable), so quick.sh can reuse them without
 # re-provisioning on every edit-test cycle against a kept-up stack.
 write_tokens_file() {
 	local tokensFile="${DOCKER_DIR}/.tokens"
@@ -335,6 +394,8 @@ write_tokens_file() {
 	{
 		printf 'TOKEN=%s\n' "${TOKEN}"
 		printf 'LOWPRIV_TOKEN=%s\n' "${LOWPRIV_TOKEN}"
+		printf 'AUTHOR_TOKEN=%s\n' "${AUTHOR_TOKEN}"
+		printf 'SCOPED_MANAGER_TOKEN=%s\n' "${SCOPED_MANAGER_TOKEN}"
 	} > "${tokensFile}"
 	chmod 600 "${tokensFile}"
 
@@ -352,12 +413,16 @@ run_phpunit() {
 			-e MCP4J_BASE_URL="http://web/api/index.php" \
 			-e MCP4J_API_TOKEN="${TOKEN}" \
 			-e MCP4J_LOWPRIV_TOKEN="${LOWPRIV_TOKEN}" \
+			-e MCP4J_AUTHOR_TOKEN="${AUTHOR_TOKEN}" \
+			-e MCP4J_SCOPED_MANAGER_TOKEN="${SCOPED_MANAGER_TOKEN}" \
 			web phpunit -c /app/phpunit-integration.xml "${PHPUNIT_ARGS[@]}"
 	else
 		DC exec -T \
 			-e MCP4J_BASE_URL="http://web/api/index.php" \
 			-e MCP4J_API_TOKEN="${TOKEN}" \
 			-e MCP4J_LOWPRIV_TOKEN="${LOWPRIV_TOKEN}" \
+			-e MCP4J_AUTHOR_TOKEN="${AUTHOR_TOKEN}" \
+			-e MCP4J_SCOPED_MANAGER_TOKEN="${SCOPED_MANAGER_TOKEN}" \
 			web phpunit -c /app/phpunit-integration.xml
 	fi
 }
@@ -391,6 +456,8 @@ run_one() {
 	fix_permissions
 	provision_token
 	provision_lowpriv
+	provision_author
+	provision_scoped_manager
 	write_tokens_file
 	run_phpunit "${phpVersion}"
 }

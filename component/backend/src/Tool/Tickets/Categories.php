@@ -9,6 +9,7 @@ namespace Akeeba\Component\Mcp4j\Administrator\Tool\Tickets;
 
 defined('_JEXEC') || die;
 
+use Akeeba\Component\ATS\Administrator\Helper\Permissions;
 use Akeeba\Component\Mcp4j\Administrator\Mapper\Tickets\TicketCategoryMapper;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Attribute\McpTool;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Attribute\Schema;
@@ -48,17 +49,29 @@ class Categories extends AbstractAtsTool
 		$this->bootAts();
 		$this->requireAtsManager();
 
+		// security.md M5: CategoriesModel's own filtering is a plain Joomla content view-access level,
+		// not the per-category manage-ACL check Permissions::isManager()/getManagerCategories() apply —
+		// the same gap M4 fixes for the ticket/post/attachment list tools, closed here the same way.
+		$allowed = array_values(array_unique(array_map(
+			'intval',
+			Permissions::getManagerCategories((int) $this->getUser()->id)
+		)));
+
 		/** @var CategoriesModel $model */
 		$model = $this->createModel('com_categories', 'Categories');
 
-		return $this->listItems(
+		return $this->listPageVisible(
 			$model,
 			TicketCategoryMapper::listState($filterSearch),
 			$pageLimit,
 			$pageOffset,
-			TicketCategoryMapper::LIST_FIELDS,
-			TicketCategoryMapper::INT_FIELDS,
-			TicketCategoryMapper::JSON_FIELDS
+			fn (object $item): bool => in_array((int) ($item->id ?? 0), $allowed, true),
+			fn (object $item): array => $this->shape(
+				$item,
+				TicketCategoryMapper::LIST_FIELDS,
+				TicketCategoryMapper::INT_FIELDS,
+				TicketCategoryMapper::JSON_FIELDS
+			)
 		);
 	}
 

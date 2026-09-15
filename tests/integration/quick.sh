@@ -79,6 +79,8 @@ export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mcp4j-itest}"
 . ./.tokens
 : "${TOKEN:?docker/.tokens has no TOKEN=... line}"
 : "${LOWPRIV_TOKEN:=}"
+: "${AUTHOR_TOKEN:=}"
+: "${SCOPED_MANAGER_TOKEN:=}"
 
 RUNNING="$(DC ps -q web 2>/dev/null || true)"
 [ -n "${RUNNING}" ] || die "The 'web' service is not running (COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}). Run tests/integration/run-tests.sh <version> --keep first."
@@ -116,11 +118,15 @@ if [ "${#PHPUNIT_ARGS[@]}" -gt 0 ]; then
 		-e MCP4J_BASE_URL="http://web/api/index.php" \
 		-e MCP4J_API_TOKEN="${TOKEN}" \
 		-e MCP4J_LOWPRIV_TOKEN="${LOWPRIV_TOKEN}" \
+		-e MCP4J_AUTHOR_TOKEN="${AUTHOR_TOKEN}" \
+		-e MCP4J_SCOPED_MANAGER_TOKEN="${SCOPED_MANAGER_TOKEN}" \
 		web phpunit -c /app/phpunit-integration.xml "${PHPUNIT_ARGS[@]}"
 else
 	DC exec -T \
 		-e MCP4J_BASE_URL="http://web/api/index.php" \
 		-e MCP4J_API_TOKEN="${TOKEN}" \
 		-e MCP4J_LOWPRIV_TOKEN="${LOWPRIV_TOKEN}" \
+		-e MCP4J_AUTHOR_TOKEN="${AUTHOR_TOKEN}" \
+		-e MCP4J_SCOPED_MANAGER_TOKEN="${SCOPED_MANAGER_TOKEN}" \
 		web phpunit -c /app/phpunit-integration.xml
 fi

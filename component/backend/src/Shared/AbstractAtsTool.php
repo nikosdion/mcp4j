@@ -232,6 +232,41 @@ abstract class AbstractAtsTool extends AbstractTool
 	}
 
 	/**
+	 * Re-derives exactly the `'view'` boolean `Permissions::getTicketPrivileges()` computes (see that
+	 * method's own docblock in `~/Projects/j4-akeeba/ats/component/backend/src/Helper/Permissions.php`),
+	 * but from a plain object carrying `id`/`catid`/`created_by`/`public` rather than a real `TicketTable`
+	 * instance.
+	 *
+	 * security.md M4: the `*_list` tools (unlike their single-record `*_read` siblings) work over raw
+	 * query-row `stdClass` objects returned by `TicketsModel`/`PostsModel`/`AttachmentsModel::getItems()`,
+	 * never a `TicketTable`. `getTicketPrivileges(TicketTable $ticket, ...)` declares its first parameter
+	 * with a strict class type hint, so calling it with a `stdClass` row is a fatal `TypeError`, not a
+	 * looser duck-typing pass — loading a real `TicketTable` per candidate row (via
+	 * {@see self::loadTicketTable()}) was considered but rejected as an avoidable N+1 query cost for
+	 * `Posts`/`Attachments`' list tools, which can touch many distinct tickets per page. Recomputing the
+	 * same four lower-level primitives `getTicketPrivileges()` itself calls sidesteps both problems: it
+	 * works on any object shape (a raw list row OR a real `TicketTable`, since PHP doesn't care beyond
+	 * property access) and needs no extra query beyond what's already in hand.
+	 *
+	 * Keep this in lockstep with `getTicketPrivileges()`'s own `'view'` expression if ATS ever changes it.
+	 */
+	protected function ticketRowVisible(object $ticket): bool
+	{
+		$userId    = (int) $this->getUser()->id;
+		$ticketId  = (int) ($ticket->id ?? 0);
+		$catid     = (int) ($ticket->catid ?? 0);
+		$createdBy = (int) ($ticket->created_by ?? 0);
+		$public    = (int) ($ticket->public ?? 0);
+
+		$isOwner        = $createdBy > 0 && $createdBy === $userId;
+		$isInvited      = Permissions::isInvited($ticketId, $userId);
+		$canSeeCategory = Permissions::canAccessCategory($catid, $this->getUser());
+		$canReadPrivate = Permissions::canReadPrivate($catid, $userId);
+
+		return $isOwner || $isInvited || ($canSeeCategory && ($public === 1 || $canReadPrivate));
+	}
+
+	/**
 	 * Asserts `$catid` is a real `com_ats` category — `Permissions::getAclPrivileges()` falls back to the
 	 * `com_ats` component asset for a nonexistent/foreign category id, which would otherwise let a Super
 	 * User file a ticket into a `com_content` category.
@@ -406,6 +441,74 @@ abstract class AbstractAtsTool extends AbstractTool
 				'total'  => count($rows),
 				'limit'  => count($rows),
 				'offset' => 0,
+			],
+		];
+	}
+
+	/**
+	 * Like {@see self::listPage()}, but additionally filters the model's full matching result set through
+	 * a per-row visibility predicate before paginating — security.md M4/M5's fix: `TicketsModel`,
+	 * `PostsModel`, `AttachmentsModel` and the generic `com_categories` `CategoriesModel` all filter their
+	 * list query by nothing more than a plain Joomla content view-access level (or, for `TicketsModel`,
+	 * that plus whatever `filter.catid` the caller sets), never the per-category manage-ACL/privacy check
+	 * the equivalent single-record `*_read` tool already enforces via
+	 * {@see self::requireViewTicket()}/{@see self::ticketRowVisible()}. This closes that gap generically
+	 * for every list tool that needs it.
+	 *
+	 * Deliberate performance trade-off: `$model` is always fetched UNPAGINATED (`list.start = 0`,
+	 * `list.limit = 0`) so the visibility filter runs over the complete matching set, not just one
+	 * DB-paginated page — a DB-level LIMIT/OFFSET applied before filtering would silently under-count
+	 * `total` and could skip or duplicate rows across pages, since the predicate depends on state
+	 * (ownership, invitations, per-category ACL, privacy) the SQL query has no way to express. `total` is
+	 * then the count of the FILTERED set, and pagination slices that filtered array, not the raw query
+	 * result. Acceptable at ticket-system data volumes; revisit if a site's `#__ats_tickets`/`_posts`/
+	 * `_attachments` tables ever grow large enough for this to matter.
+	 *
+	 * @param   array<string, mixed>  $state
+	 * @param   callable               $isVisible  `(object $item): bool` — decides whether a fetched row
+	 *                                              belongs in the output at all.
+	 * @param   callable               $toRow      `(object $item): array<string, mixed>` — shapes a row
+	 *                                              that passed `$isVisible` into its output record. Never
+	 *                                              called for a row `$isVisible` rejected, so it's safe for
+	 *                                              this to do heavier per-row work (enrichment queries).
+	 *
+	 * @return  array{items: list<array>, pagination: array{total: int, limit: int, offset: int}}
+	 * @throws  ToolException
+	 */
+	protected function listPageVisible(
+		ListModel $model,
+		array $state,
+		?int $pageLimit,
+		?int $pageOffset,
+		callable $isVisible,
+		callable $toRow
+	): array {
+		[$limit, $offset] = Pagination::normalise($pageLimit, $pageOffset);
+
+		foreach ($state as $key => $value)
+		{
+			$model->setState($key, $value);
+		}
+
+		$model->setState('list.start', 0);
+		$model->setState('list.limit', 0);
+
+		$items = $model->getItems();
+
+		if ($items === false)
+		{
+			throw new ToolException($this->modelError($model, 'Cannot list items'));
+		}
+
+		$visible = array_values(array_filter($items, $isVisible));
+		$page    = array_slice($visible, $offset, $limit);
+
+		return [
+			'items'      => array_values(array_map($toRow, $page)),
+			'pagination' => [
+				'total'  => count($visible),
+				'limit'  => $limit,
+				'offset' => $offset,
 			],
 		];
 	}

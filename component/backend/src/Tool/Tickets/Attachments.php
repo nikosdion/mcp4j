@@ -12,6 +12,8 @@ defined('_JEXEC') || die;
 use Akeeba\Component\ATS\Administrator\Helper\Permissions;
 use Akeeba\Component\ATS\Administrator\Model\AttachmentsModel;
 use Akeeba\Component\ATS\Administrator\Table\AttachmentTable;
+use Akeeba\Component\ATS\Administrator\Table\PostTable;
+use Akeeba\Component\ATS\Administrator\Table\TicketTable;
 use Akeeba\Component\Mcp4j\Administrator\Bridge\Support\ItemNormalizer;
 use Akeeba\Component\Mcp4j\Administrator\Mapper\Tickets\AttachmentInliner;
 use Akeeba\Component\Mcp4j\Administrator\Mapper\Tickets\AttachmentMapper;
@@ -47,13 +49,19 @@ use Akeeba\Component\Mcp4j\Administrator\Shared\AbstractAtsTool;
 class Attachments extends AbstractAtsTool
 {
 	/**
-	 * Memoises the post -> ATS category lookup used by {@see self::listAttachments()}, which lists
-	 * attachments across every post and would otherwise re-load the same post's ticket once per
-	 * attachment.
+	 * Memoises post_id -> PostTable and ticket_id -> TicketTable lookups used by
+	 * {@see self::listAttachments()}, which lists attachments across every post and would otherwise
+	 * re-load the same post/ticket once per attachment — both for the catid (enrichment) and, since
+	 * security.md M4's fix, for the per-row visibility check.
 	 *
-	 * @var  array<int, int>
+	 * @var  array<int, PostTable>
 	 */
-	private array $postCatidCache = [];
+	private array $postCache = [];
+
+	/**
+	 * @var  array<int, TicketTable>
+	 */
+	private array $ticketCache = [];
 
 	#[McpTool(
 		name: 'tickets_attachments_list',
@@ -71,17 +79,31 @@ class Attachments extends AbstractAtsTool
 		$this->requireAtsManager();
 		$this->requireAtsPro();
 
+		// security.md M4: ticketRowVisible() alone grants access to any PUBLIC ticket whose category's
+		// plain Joomla content view-access level the caller holds, regardless of manage-ACL (see the
+		// matching comment in Posts::listPosts(), which hit exactly this via its own E2E test) — the
+		// category-allowlist check below is required on top of it, exactly as Tickets::listTickets() does.
+		$allowedCategories = array_map('intval', Permissions::getManagerCategories((int) $this->getUser()->id));
+
 		/** @var AttachmentsModel $model */
 		$model = $this->createModel('com_ats', 'Attachments');
 
 		// AttachmentsModel's own state defaults apply unmodified: published-only (filter.enabled = 1),
 		// ordered a.created ASC, restricted to the categories whose view level the user holds (via the
-		// attachment's post's ticket).
-		return $this->listPage(
+		// attachment's post's ticket) — but see listPageVisible() below: security.md M4 found that filter
+		// alone insufficient (no manage-ACL/privacy re-check), so every row's parent ticket is
+		// additionally re-checked the same way tickets_tickets_list does: category-membership in
+		// getManagerCategories() AND ticketRowVisible().
+		return $this->listPageVisible(
 			$model,
 			[],
 			$pageLimit,
 			$pageOffset,
+			function (object $item) use ($allowedCategories): bool {
+				$ticket = $this->ticketForPostId((int) ($item->post_id ?? 0));
+
+				return in_array((int) $ticket->catid, $allowedCategories, true) && $this->ticketRowVisible($ticket);
+			},
 			function (object $item): array {
 				$catid = $this->catidForPost((int) ($item->post_id ?? 0));
 
@@ -281,15 +303,20 @@ class Attachments extends AbstractAtsTool
 		return $this->shape($arr, $fields, AttachmentMapper::INT_FIELDS);
 	}
 
+	private function postForId(int $postId): PostTable
+	{
+		return $this->postCache[$postId] ??= $this->loadPostTable($postId);
+	}
+
+	private function ticketForPostId(int $postId): TicketTable
+	{
+		$ticketId = (int) $this->postForId($postId)->ticket_id;
+
+		return $this->ticketCache[$ticketId] ??= $this->loadTicketTable($ticketId);
+	}
+
 	private function catidForPost(int $postId): int
 	{
-		if (!array_key_exists($postId, $this->postCatidCache))
-		{
-			$post = $this->loadPostTable($postId);
-
-			$this->postCatidCache[$postId] = (int) $this->loadTicketTable((int) $post->ticket_id)->catid;
-		}
-
-		return $this->postCatidCache[$postId];
+		return (int) $this->ticketForPostId($postId)->catid;
 	}
 }
