@@ -15,6 +15,7 @@
     <source>
         <include>
             <directory suffix=".php">component/backend/src/Support</directory>
+            <directory suffix=".php">component/backend/src/Mcp/Support</directory>
         </include>
     </source>
 

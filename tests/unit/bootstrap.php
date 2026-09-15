@@ -9,9 +9,12 @@
  * Bootstrap for the unit test suite.
  *
  * No Joomla framework is loaded here on purpose: these tests exercise the pure, framework-free classes
- * under component/backend/src/Support (see .claude/mcp-session-handling.md and the class docblocks for
- * why that logic was pulled out of the Joomla-coupled SessionManager/ServerController in the first
- * place). Only the vendored Composer autoloader is needed to load them.
+ * that live in several `Support/` folders under component/backend/src (component/backend/src/Support,
+ * component/backend/src/Mcp/Support, and — from later plans onward — component/backend/src/Bridge/Support
+ * and component/backend/src/Mapper/<Category>). See .claude/mcp-session-handling.md and the individual
+ * class docblocks for why this logic is deliberately kept Joomla-free. Joomla-coupled classes (anything
+ * that touches Factory::getApplication(), the database, etc.) must never be loaded by this suite — only
+ * the vendored Composer autoloader is needed to load the classes under test.
  */
 
 // phpcs:disable PSR1.Files.SideEffects
@@ -37,6 +40,10 @@ if (!is_file($vendorAutoload))
 $classLoader = require $vendorAutoload;
 
 // The vendored autoloader only ships production dependencies (no dev autoload map), so register the
-// namespace under test, and the unit test namespace itself, by hand.
-$classLoader->addPsr4('Akeeba\\Component\\Mcp4j\\Administrator\\Support\\', __DIR__ . '/../../component/backend/src/Support');
+// namespace under test, and the unit test namespace itself, by hand. The whole `Administrator\` root is
+// registered (not just `Administrator\Support\`) so that `Administrator\Mcp\...` (attributes, exceptions,
+// Mcp\Support) resolves too — nothing under `Administrator\` outside of a `Support/` folder is meant to
+// be loaded by this suite, but PSR-4 has no way to express "except this subtree", so that boundary is
+// enforced by review/convention (see .plans/00-conventions.md), not by the autoloader.
+$classLoader->addPsr4('Akeeba\\Component\\Mcp4j\\Administrator\\', __DIR__ . '/../../component/backend/src');
 $classLoader->addPsr4('Akeeba\\Mcp4j\\Tests\\Unit\\', __DIR__);

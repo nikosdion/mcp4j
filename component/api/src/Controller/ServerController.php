@@ -10,9 +10,16 @@ namespace Akeeba\Component\Mcp4j\Api\Controller;
 defined('_JEXEC') || die;
 
 use Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\InvalidToolArgumentsException;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\UnknownToolException;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\SecretLeakGuard;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ServerInstructions;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\ToolContext;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\ToolDispatcher;
 use Akeeba\Component\Mcp4j\Administrator\Support\JsonRpcRequest;
 use Akeeba\Component\Mcp4j\Administrator\Support\JsonRpcRequestException;
 use Akeeba\Component\Mcp4j\Api\Exception\JsonRpcException;
+use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\MVC\Controller\ApiController;
 use Joomla\Database\DatabaseInterface;
@@ -40,6 +47,8 @@ class ServerController extends ApiController
 	private const PROTOCOL_VERSION = '2025-06-18';
 
 	private ?SessionManager $sessionManager = null;
+
+	private ?ToolDispatcher $toolDispatcher = null;
 
 	public function execute($task)
 	{
@@ -201,28 +210,32 @@ class ServerController extends ApiController
 				'name'    => 'MCP4j',
 				'version' => '0.0.1',
 			],
+			'instructions'    => ServerInstructions::build($this->getToolDispatcher()->exposedCategories()),
 		]);
 	}
 
 	/**
 	 * @return array{tools: array}
 	 * @throws JsonRpcException
-	 * @todo   Return the actual Joomla-facing tool surface once it exists. Empty for now.
 	 */
 	private function handleToolsList(array $params): array
 	{
-		return ['tools' => []];
+		return $this->getToolDispatcher()->listTools();
 	}
 
 	/**
 	 * @throws JsonRpcException
-	 * @todo   Dispatch to a real tool once any exist. Every call is currently "unknown tool".
 	 */
 	private function handleToolsCall(array $params): array
 	{
-		$name = is_string($params['name'] ?? null) ? $params['name'] : '(missing)';
-
-		throw new JsonRpcException(sprintf('Unknown tool: %s', $name), -32602);
+		try
+		{
+			return $this->getToolDispatcher()->callTool($params);
+		}
+		catch (UnknownToolException|InvalidToolArgumentsException $e)
+		{
+			throw new JsonRpcException($e->getMessage(), -32602);
+		}
 	}
 
 	/**
@@ -313,6 +326,86 @@ class ServerController extends ApiController
 	private function getSessionManager(): SessionManager
 	{
 		return $this->sessionManager ??= new SessionManager(Factory::getContainer()->get(DatabaseInterface::class));
+	}
+
+	/**
+	 * Builds (and memoises, for the lifetime of this request) the tool dispatcher, with a
+	 * {@see ToolContext} carrying the current API user, `com_mcp4j` parameters, and the secrets
+	 * {@see SecretLeakGuard} must refuse to let a non-read-only tool call carry — see
+	 * `.plans/01-tool-framework.md` §16.
+	 */
+	private function getToolDispatcher(): ToolDispatcher
+	{
+		if ($this->toolDispatcher !== null)
+		{
+			return $this->toolDispatcher;
+		}
+
+		$context = new ToolContext(
+			$this->app,
+			$this->app->getIdentity(),
+			ComponentHelper::getParams('com_mcp4j'),
+			$this->collectProtectedSecrets()
+		);
+
+		return $this->toolDispatcher = new ToolDispatcher($context);
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	private function collectProtectedSecrets(): array
+	{
+		$params = ComponentHelper::getParams('com_mcp4j');
+
+		// The bearer token of *this* request — always protected, however short (a short token is still a
+		// token, and site owners should not be encouraged to think a short one is safe to leak).
+		$bearerCandidates = [
+			$this->getBearerToken(),
+			$this->input->server->getString('HTTP_X_JOOMLA_TOKEN', ''),
+		];
+
+		// Global configuration secrets — an 8-character minimum avoids false-positiving on a dev site's
+		// trivially short DB/mail password (e.g. "root") blocking otherwise legitimate tool arguments.
+		$siteSecretKeys = [
+			'secret',
+			'password',
+			'smtppass',
+			'ftp_pass',
+			'proxy_pass',
+			'redis_server_auth',
+			'session_redis_server_auth',
+		];
+
+		$siteSecretCandidates = array_map(
+			fn (string $key): string => (string) $this->app->get($key, ''),
+			$siteSecretKeys
+		);
+
+		$forbiddenCandidates = preg_split('/\R/', (string) $params->get('forbidden_secrets', '')) ?: [];
+
+		return array_values(array_unique(array_merge(
+			SecretLeakGuard::normaliseSecrets($bearerCandidates, 1),
+			SecretLeakGuard::normaliseSecrets($siteSecretCandidates, 8),
+			SecretLeakGuard::normaliseSecrets($forbiddenCandidates, 1)
+		)));
+	}
+
+	private function getBearerToken(): string
+	{
+		$header = $this->input->server->getString('HTTP_AUTHORIZATION', '');
+
+		if ($header === '')
+		{
+			$header = $this->input->server->getString('REDIRECT_HTTP_AUTHORIZATION', '');
+		}
+
+		if (preg_match('/^Bearer\s+(.+)$/i', trim($header), $matches) === 1)
+		{
+			return trim($matches[1]);
+		}
+
+		return '';
 	}
 
 	private function pruneIfConfigured(): void

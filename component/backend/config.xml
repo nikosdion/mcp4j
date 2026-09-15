@@ -32,6 +32,74 @@
     </fieldset>
 
     <fieldset
+            name="tools"
+            label="COM_MCP4J_CONFIG_OPTIONS_TOOLS_LABEL"
+            addfieldprefix="Akeeba\Component\Mcp4j\Administrator\Field"
+    >
+        <field
+                name="tool_categories"
+                type="ToolCategories"
+                multiple="true"
+                label="COM_MCP4J_CONFIG_TOOL_CATEGORIES_LABEL"
+                description="COM_MCP4J_CONFIG_TOOL_CATEGORIES_DESC"
+        />
+
+        <field
+                name="tool_allowlist"
+                type="textarea"
+                filter="raw"
+                rows="5"
+                label="COM_MCP4J_CONFIG_TOOL_ALLOWLIST_LABEL"
+                description="COM_MCP4J_CONFIG_TOOL_ALLOWLIST_DESC"
+        />
+
+        <field
+                name="read_only"
+                type="radio"
+                layout="joomla.form.field.radio.switcher"
+                label="COM_MCP4J_CONFIG_READ_ONLY_LABEL"
+                description="COM_MCP4J_CONFIG_READ_ONLY_DESC"
+                default="0"
+        >
+            <option value="0">JNO</option>
+            <option value="1">JYES</option>
+        </field>
+
+        <field
+                name="minimal_schema"
+                type="radio"
+                layout="joomla.form.field.radio.switcher"
+                label="COM_MCP4J_CONFIG_MINIMAL_SCHEMA_LABEL"
+                description="COM_MCP4J_CONFIG_MINIMAL_SCHEMA_DESC"
+                default="0"
+        >
+            <option value="0">JNO</option>
+            <option value="1">JYES</option>
+        </field>
+
+        <field
+                name="forbidden_secrets"
+                type="textarea"
+                filter="raw"
+                rows="5"
+                label="COM_MCP4J_CONFIG_FORBIDDEN_SECRETS_LABEL"
+                description="COM_MCP4J_CONFIG_FORBIDDEN_SECRETS_DESC"
+        />
+
+        <field
+                name="debug_log"
+                type="radio"
+                layout="joomla.form.field.radio.switcher"
+                label="COM_MCP4J_CONFIG_DEBUG_LOG_LABEL"
+                description="COM_MCP4J_CONFIG_DEBUG_LOG_DESC"
+                default="0"
+        >
+            <option value="0">JNO</option>
+            <option value="1">JYES</option>
+        </field>
+    </fieldset>
+
+    <fieldset
             name="permissions"
             label="JCONFIG_PERMISSIONS_LABEL"
             description="JCONFIG_PERMISSIONS_DESC"
