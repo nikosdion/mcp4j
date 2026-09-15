@@ -80,12 +80,12 @@ while [ $# -gt 0 ]; do
 done
 
 # ---------------------------------------------------------------------------
-# Environment: create .env from template, load it.
+# Environment: create .env from template, load it. See lib.sh's load_env_file()
+# for why: values already set in the process environment (e.g. a parallel git
+# worktree's COMPOSE_PROJECT_NAME/WEB_PORT) must win over docker/.env.
 # ---------------------------------------------------------------------------
 [ -f .env ] || { cp env.dist .env; log "Created .env from env.dist"; }
-set -a
-. ./.env
-set +a
+load_env_file
 
 : "${JOOMLA_MATRIX:?JOOMLA_MATRIX is not set (see docker/env.dist)}"
 : "${DB_IMAGE:=mariadb:11.4}"
@@ -96,6 +96,11 @@ set +a
 : "${DB_PREFIX:=jtest_}"
 : "${WEB_PORT:=8180}"
 : "${PHP_VERSION:=8.3}"
+
+# Compose precedence is `-p` (not used here) > COMPOSE_PROJECT_NAME > the compose file's own `name:`
+# (mcp4j-itest, see docker-compose.yml) — export a default so every DC call below is pinned to a
+# project name, whether or not docker/.env or the process environment set one.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mcp4j-itest}"
 
 # Looks up the PHP version paired with a Joomla version in JOOMLA_MATRIX. Prints nothing
 # (and returns non-zero) if that exact string isn't a matrix entry's Joomla side.
@@ -226,6 +231,65 @@ install_package() {
 	ok "pkg_mcp4j installed"
 }
 
+# Installs any optional third-party extension packages (Panopticon Connector, ATS, Admin Tools, Akeeba
+# Backup, ...) dropped into ${MCP4J_EXTRA_PACKAGES_DIR:-inbox/extensions}, so their tool classes'
+# tests (which self-skip via requireToolsOrSkip() when absent) actually get to run. A failed install of
+# one package is a warning, not a die — the tests that depend on it just skip instead of the whole
+# matrix entry failing.
+install_extra_packages() {
+	local dir="${MCP4J_EXTRA_PACKAGES_DIR:-${INBOX_DIR}/extensions}"
+
+	if [ ! -d "${dir}" ]; then
+		log "No extra packages directory (${dir}); skipping third-party extensions."
+		return 0
+	fi
+
+	shopt -s nullglob
+	local -a zips=("${dir}"/*.zip)
+	shopt -u nullglob
+
+	if [ "${#zips[@]}" -eq 0 ]; then
+		log "No extra packages (*.zip) in ${dir}; skipping third-party extensions."
+		return 0
+	fi
+
+	log "Installing extra packages from ${dir}"
+	mkdir -p "${WWW_DIR}/tmp"
+
+	local zip name
+	while IFS= read -r zip; do
+		[ -n "${zip}" ] || continue
+		name="$(basename "${zip}")"
+
+		log "Installing extra package: ${name}"
+		# The container can't necessarily follow a host symlink inside /app (inbox/ is one), so copy
+		# the zip into the bind-mounted web root first, then install it from there.
+		cp "${zip}" "${WWW_DIR}/tmp/${name}"
+
+		# `< /dev/null` is not optional: without it, `DC exec` inherits this loop's own stdin (the
+		# process-substitution fd feeding `read -r zip` below) and the docker/compose client's own
+		# input handling races the loop for it — silently swallowing later lines and ending the loop
+		# after one iteration. This is the classic "ssh/docker exec inside a while-read loop" pitfall.
+		if DC exec -T web php cli/joomla.php extension:install --path="/var/www/html/tmp/${name}" < /dev/null; then
+			ok "Installed ${name}"
+		else
+			warn "Failed to install ${name} (continuing — tests that depend on it will skip)."
+		fi
+
+		rm -f "${WWW_DIR}/tmp/${name}"
+	done < <(printf '%s\n' "${zips[@]}" | sort)
+}
+
+# Joomla itself and every extension above are installed via `DC exec` as root, but Apache serves as
+# www-data. Any tool that writes a file under the web root (configuration.php, media uploads, language
+# override INI files, ...) would fail on a Linux Docker host without this.
+fix_permissions() {
+	log "Fixing web root ownership (www-data)"
+	DC exec -T web chown -R www-data:www-data /var/www/html \
+		|| die "Could not chown the web root to www-data."
+	ok "Web root ownership fixed"
+}
+
 TOKEN=""
 
 provision_token() {
@@ -240,6 +304,43 @@ provision_token() {
 	ok "Token acquired"
 }
 
+LOWPRIV_USER="lowpriv"
+LOWPRIV_TOKEN=""
+
+# Provisions a low-privilege ("Registered" group only) API user and mints its token, so every tool's
+# ACL enforcement can be proven end to end — see provision-lowpriv-user.php's docblock for exactly what
+# it grants and why a stock Joomla install refuses this user at the Web Services API layer otherwise.
+provision_lowpriv() {
+	log "Provisioning the low-privilege API user (${LOWPRIV_USER})"
+	DC exec -T web php /app/tests/integration/docker/provision-lowpriv-user.php "${LOWPRIV_USER}" \
+		|| die "Low-privilege user provisioning failed."
+	ok "Low-privilege user ready"
+
+	log "Provisioning a Joomla API token for ${LOWPRIV_USER}"
+	local out
+	out="$(DC exec -T web php /app/tests/integration/docker/provision-token.php "${LOWPRIV_USER}")" \
+		|| die "Low-privilege token generation failed."
+
+	LOWPRIV_TOKEN="$(printf '%s\n' "${out}" | tr -d '\r' | awk 'NF { line = $0 } END { print line }')"
+
+	[ -n "${LOWPRIV_TOKEN}" ] || die "Could not extract a non-empty API token for ${LOWPRIV_USER}."
+	ok "Low-privilege token acquired"
+}
+
+# Writes both tokens to docker/.tokens (shell-sourceable), so quick.sh can reuse them without
+# re-provisioning on every edit-test cycle against a kept-up stack.
+write_tokens_file() {
+	local tokensFile="${DOCKER_DIR}/.tokens"
+
+	{
+		printf 'TOKEN=%s\n' "${TOKEN}"
+		printf 'LOWPRIV_TOKEN=%s\n' "${LOWPRIV_TOKEN}"
+	} > "${tokensFile}"
+	chmod 600 "${tokensFile}"
+
+	ok "Wrote $(basename "${tokensFile}")"
+}
+
 # ---------------------------------------------------------------------------
 # PHPUnit
 # ---------------------------------------------------------------------------
@@ -250,11 +351,13 @@ run_phpunit() {
 		DC exec -T \
 			-e MCP4J_BASE_URL="http://web/api/index.php" \
 			-e MCP4J_API_TOKEN="${TOKEN}" \
+			-e MCP4J_LOWPRIV_TOKEN="${LOWPRIV_TOKEN}" \
 			web phpunit -c /app/phpunit-integration.xml "${PHPUNIT_ARGS[@]}"
 	else
 		DC exec -T \
 			-e MCP4J_BASE_URL="http://web/api/index.php" \
 			-e MCP4J_API_TOKEN="${TOKEN}" \
+			-e MCP4J_LOWPRIV_TOKEN="${LOWPRIV_TOKEN}" \
 			web phpunit -c /app/phpunit-integration.xml
 	fi
 }
@@ -284,14 +387,18 @@ run_one() {
 	install_joomla
 	build_package
 	install_package
+	install_extra_packages
+	fix_permissions
 	provision_token
+	provision_lowpriv
+	write_tokens_file
 	run_phpunit "${phpVersion}"
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-log "MCP4j integration harness — pairs: ${PAIRS[*]}"
+log "MCP4j integration harness — pairs: ${PAIRS[*]} (project ${COMPOSE_PROJECT_NAME}, port ${WEB_PORT})"
 
 start_database
 

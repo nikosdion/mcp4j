@@ -34,6 +34,43 @@ warn() { printf "${C_Y}  !!${C_0} %s\n" "$*"; }
 die()  { printf "${C_R}ERROR:${C_0} %s\n" "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
+# Environment loading, shared between run-tests.sh and quick.sh.
+# ---------------------------------------------------------------------------
+# Names whose value in the *process* environment (already set by whoever invoked us — a parallel git
+# worktree's wrapper, CI, quick.sh) must win over the same name's value in docker/.env. Plain
+# `set -a; . ./.env` would otherwise silently clobber them, which is exactly what breaks running several
+# worktrees' stacks at once (see README, "Parallel runs from git worktrees").
+ENV_OVERRIDE_NAMES="COMPOSE_PROJECT_NAME WEB_PORT JOOMLA_MATRIX PHP_VERSION"
+
+# Sources ./.env (caller's cwd must be the directory containing it, i.e. tests/integration/docker),
+# letting any of ENV_OVERRIDE_NAMES already set in the process environment win over the file's own
+# value. Safe under `set -eu`: uses `${!name+x}` indirection to test "is this name set" without
+# tripping `nounset` on an unset variable.
+load_env_file() {
+	local name remembered
+
+	for name in ${ENV_OVERRIDE_NAMES}; do
+		if [ -n "${!name+x}" ]; then
+			printf -v "REMEMBERED_${name}" '%s' "${!name}"
+		fi
+	done
+
+	set -a
+	# shellcheck source=/dev/null
+	. ./.env
+	set +a
+
+	for name in ${ENV_OVERRIDE_NAMES}; do
+		remembered="REMEMBERED_${name}"
+
+		if [ -n "${!remembered+x}" ]; then
+			printf -v "${name}" '%s' "${!remembered}"
+			export "${name}"
+		fi
+	done
+}
+
+# ---------------------------------------------------------------------------
 # The list of published Joomla/WordPress versions and their download URLs,
 # served (gzip-compressed) by Akeeba's own Panopticon checksums service.
 #   Docs: https://getpanopticon.com/checksums/index.html

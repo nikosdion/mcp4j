@@ -5,6 +5,10 @@
 # builds and installs pkg_mcp4j, provisions an API token and drives PHPUnit
 # inside the `web` container. This file only describes the services.
 
+# Compose project name precedence is `-p` (not used by run-tests.sh) > the COMPOSE_PROJECT_NAME
+# environment variable > this `name:`. run-tests.sh/quick.sh always export COMPOSE_PROJECT_NAME (default
+# mcp4j-itest, overridable per docker/.env or the process environment — see ../README.md, "Parallel runs
+# from git worktrees"), so this value is only ever the fallback for driving `docker compose` by hand.
 name: mcp4j-itest
 
 services:

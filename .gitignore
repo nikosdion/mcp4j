@@ -25,6 +25,7 @@
 
 ### Integration test harness (Docker-provisioned, throwaway per run)
 /tests/integration/docker/.env
+/tests/integration/docker/.tokens
 /tests/integration/docker/www
 /tests/integration/inbox
 
