@@ -37,7 +37,9 @@ Store MCP session state ourselves, explicitly, in a database table owned by
   user_id          INT UNSIGNED -- the Joomla user resolved from the API token
   protocol_version VARCHAR(16)
   client_info      TEXT         -- JSON: name/version the client sent at initialize
-  session_data     LONGTEXT     -- serialized snapshot of the whole Joomla\Session\Session
+  session_data     LONGTEXT     -- JSON snapshot of the whole Joomla\Session\Session (scalar/array
+                                 -- values only — deliberately not PHP serialize(), to avoid
+                                 -- unserializing attacker-reachable data into objects)
   created          DATETIME
   last_active      DATETIME     -- refreshed on every request that uses this session
   expires          DATETIME     -- last_active + TTL (component option, default 3600s)
@@ -54,7 +56,7 @@ Flow, per request:
      `session_id`, checks `expires`, checks that `user_id` matches the user
      resolved from the bearer token this request (defence in depth — a session ID
      is not itself an auth credential, the token still is), and — if valid —
-     unserializes `session_data` and replays it into the current request's
+     JSON-decodes `session_data` and replays it into the current request's
      `Joomla\Session\Session` object (`$session->set($key, $value)` for every
      key). This makes the *ephemeral* per-request session look, to any Joomla
      code that touches it during this request, like a continuation of the
@@ -139,13 +141,22 @@ a breaking rework later.
 - `#__mcp4j_sessions` schema, the `session_ttl` and `prune_on_request` component
   options, `Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager`, and
   `plg_task_mcp4j` exist.
-- **Not yet wired up**: `component/api/src/Controller/ServerController.php` does
-  not call `SessionManager::resume()`/`persist()`/`create()` yet — it still
-  replies with a fixed "not implemented" JSON-RPC error for every method. That
-  wiring belongs together with implementing `initialize`, since `initialize` is
-  what decides whether to mint a new row versus resume an existing one, and the
-  request-envelope-level code (read `Mcp-Session-Id` header in, write it out)
-  needs a real method dispatch table to sit around.
+- `ServerController` now implements the full request envelope: JSON-RPC 2.0
+  parsing (batching intentionally rejected — MCP dropped it in 2025-06-18),
+  `initialize` (mints a session, ignores any `Mcp-Session-Id` sent with it),
+  `notifications/initialized`, `ping`, `tools/list` (currently always empty),
+  `tools/call` (currently always "unknown tool" — `-32602`, thrown as a
+  {@see Akeeba\Component\Mcp4j\Api\Exception\JsonRpcException}), and
+  `DELETE .../server` → `SessionManager::delete()`. Every method other than
+  `initialize`/`notifications/initialized` goes through
+  `ServerController::requireSession()`, which resolves the bearer-token user,
+  resumes the row into `$app->getSession()`, and 400s/401s/404s appropriately;
+  `dispatch()` always calls `SessionManager::persist()` before responding
+  (before the notification/error/result branch, so a session's `last_active` is
+  refreshed even on a JSON-RPC-level error).
+- Still to build: the actual Joomla-facing tool surface (`handleToolsList()` /
+  `handleToolsCall()` / `dispatchMethod()` in `ServerController` are the seam —
+  swap the empty list and the "unknown tool" throw for a real tool registry).
 
 ## Open questions to resume on
 

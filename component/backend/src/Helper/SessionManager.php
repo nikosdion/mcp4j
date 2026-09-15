@@ -212,9 +212,16 @@ class SessionManager
 		return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
 	}
 
+	/**
+	 * Deliberately JSON, not PHP serialize()/unserialize(): this blob round-trips through the
+	 * database under a client-supplied `Mcp-Session-Id`, so unserializing arbitrary objects back
+	 * out of it would be a PHP object injection gadget waiting to happen. Joomla's own session
+	 * state for the things MCP4j cares about (list model pagination/filter state, etc.) is scalar
+	 * and array data, so JSON loses nothing we need.
+	 */
 	private function serializeSession(SessionInterface $session): string
 	{
-		return base64_encode(serialize($session->all()));
+		return json_encode($session->all()) ?: '[]';
 	}
 
 	private function unserializeSession(string $data): array
@@ -224,7 +231,7 @@ class SessionManager
 			return [];
 		}
 
-		$data = @unserialize(base64_decode($data), ['allowed_classes' => true]);
+		$data = json_decode($data, true);
 
 		return is_array($data) ? $data : [];
 	}

@@ -41,6 +41,13 @@ class Mcp4j extends CMSPlugin implements SubscriberInterface
 
 		$defaults = [
 			'component' => 'com_mcp4j',
+			// MCP clients typically send `Accept: application/json, text/event-stream` per the Streamable
+			// HTTP transport spec. We only ever respond with plain JSON — no SSE, see
+			// .claude/mcp-session-handling.md — so we don't offer text/event-stream as a priority; Joomla's
+			// content negotiation will settle on `application/json`, which ApiApplication's constructor
+			// already maps to a real document type. Without this, Joomla defaults every route's negotiable
+			// formats to only `application/vnd.api+json`, which a plain JSON-RPC client won't be offering.
+			'format'    => ['application/json', 'application/vnd.api+json'],
 		];
 
 		$routes = [
@@ -49,5 +56,43 @@ class Mcp4j extends CMSPlugin implements SubscriberInterface
 		];
 
 		$router->addRoutes($routes);
+
+		$this->ensureAcceptHeaderForOurRoute($router, $routes);
+	}
+
+	/**
+	 * Joomla's content negotiation (willdurand/negotiation) throws on a missing `Accept` header — it treats
+	 * an empty header as invalid input, not as "accept anything" — which turns into a hard 406 before our
+	 * controller ever runs. Not every MCP HTTP client bothers sending one, so we fill one in ourselves,
+	 * before routing reaches that check.
+	 *
+	 * This only ever touches the request when *both* of these hold: the `Accept` header is genuinely absent
+	 * (so it's a no-op for the overwhelming majority of requests, on any endpoint), and the current request
+	 * path actually matches one of *our own* routes — reusing the exact `Route` objects and regex-matching
+	 * `parseApiRoute()` itself will use, rather than guessing from a hand-maintained path string. Other Web
+	 * Services routes are therefore never affected by this.
+	 *
+	 * @param   Route[]  $routes  The routes just registered above.
+	 */
+	private function ensureAcceptHeaderForOurRoute(ApiRouter $router, array $routes): void
+	{
+		$app = $this->getApplication();
+
+		if ($app->input->server->getString('HTTP_ACCEPT', '') !== '')
+		{
+			return;
+		}
+
+		$path = ltrim($router->getRoutePath(), '/');
+
+		foreach ($routes as $route)
+		{
+			if (preg_match($route->getRegex(), $path))
+			{
+				$app->input->server->set('HTTP_ACCEPT', 'application/json');
+
+				return;
+			}
+		}
 	}
 }
