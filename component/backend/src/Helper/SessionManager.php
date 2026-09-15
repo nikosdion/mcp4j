@@ -9,9 +9,10 @@ namespace Akeeba\Component\Mcp4j\Administrator\Helper;
 
 defined('_JEXEC') || die;
 
+use Akeeba\Component\Mcp4j\Administrator\Support\SessionClock;
+use Akeeba\Component\Mcp4j\Administrator\Support\SessionDataCodec;
+use Akeeba\Component\Mcp4j\Administrator\Support\SessionIdGenerator;
 use Joomla\CMS\Component\ComponentHelper;
-use Joomla\CMS\Date\Date;
-use Joomla\CMS\Factory;
 use Joomla\Database\DatabaseInterface;
 use Joomla\Database\ParameterType;
 use Joomla\Session\SessionInterface;
@@ -20,6 +21,10 @@ use Joomla\Session\SessionInterface;
  * Persists MCP session state — including a full snapshot of the request's ephemeral
  * {@see SessionInterface} — into `#__mcp4j_sessions`, independently of Joomla's own PHP
  * session lifecycle.
+ *
+ * This class is the thin, Joomla-coupled (database, component config) orchestration layer. The actual
+ * logic that's worth unit testing in isolation — time arithmetic, ID generation, (de)serialisation —
+ * lives in the framework-free classes under `Support/`; see `tests/unit/Support/`.
  *
  * See `.claude/mcp-session-handling.md` for the reasoning behind this design.
  *
@@ -43,19 +48,19 @@ class SessionManager
 	 */
 	public function create(SessionInterface $session, int $userId, string $protocolVersion, array $clientInfo): string
 	{
-		$sessionId = $this->generateSessionId();
-		$now       = Factory::getDate();
-		$expires   = $this->expiryFrom($now);
+		$sessionId = SessionIdGenerator::generate();
+		$now       = SessionClock::now();
+		$expires   = SessionClock::expiryFrom($now, $this->getTtl());
 
 		$object = (object) [
 			'session_id'       => $sessionId,
 			'user_id'          => $userId,
 			'protocol_version' => $protocolVersion,
 			'client_info'      => json_encode($clientInfo),
-			'session_data'     => $this->serializeSession($session),
-			'created'          => $now->toSql(),
-			'last_active'      => $now->toSql(),
-			'expires'          => $expires->toSql(),
+			'session_data'     => SessionDataCodec::encode($session->all()),
+			'created'          => SessionClock::toSql($now),
+			'last_active'      => SessionClock::toSql($now),
+			'expires'          => SessionClock::toSql($expires),
 		];
 
 		$this->db->insertObject('#__mcp4j_sessions', $object);
@@ -87,19 +92,14 @@ class SessionManager
 			return false;
 		}
 
-		// Deliberately not strtotime(): $row->expires is a naive "YYYY-MM-DD HH:MM:SS" string written in
-		// UTC (via Date::toSql()), but strtotime() interprets naive strings in the PHP process's default
-		// timezone. On a server whose default timezone isn't UTC, that silently shifts the comparison by
-		// the timezone offset — e.g. a session created seconds ago reads back as already expired. Date's
-		// constructor forces UTC while parsing, matching how the string was written.
-		if ((new Date($row->expires))->toUnix() < time())
+		if (SessionClock::isExpired($row->expires, SessionClock::now()))
 		{
 			$this->delete($sessionId);
 
 			return false;
 		}
 
-		foreach ($this->unserializeSession($row->session_data) as $key => $value)
+		foreach (SessionDataCodec::decode($row->session_data) as $key => $value)
 		{
 			$session->set($key, $value);
 		}
@@ -115,14 +115,14 @@ class SessionManager
 	 */
 	public function persist(SessionInterface $session, string $sessionId): void
 	{
-		$now     = Factory::getDate();
-		$expires = $this->expiryFrom($now);
+		$now     = SessionClock::now();
+		$expires = SessionClock::expiryFrom($now, $this->getTtl());
 
 		$object = (object) [
 			'session_id'   => $sessionId,
-			'session_data' => $this->serializeSession($session),
-			'last_active'  => $now->toSql(),
-			'expires'      => $expires->toSql(),
+			'session_data' => SessionDataCodec::encode($session->all()),
+			'last_active'  => SessionClock::toSql($now),
+			'expires'      => SessionClock::toSql($expires),
 		];
 
 		$this->db->updateObject('#__mcp4j_sessions', $object, 'session_id');
@@ -157,7 +157,7 @@ class SessionManager
 	 */
 	public function pruneExpired(): int
 	{
-		$now = Factory::getDate()->toSql();
+		$now = SessionClock::toSql(SessionClock::now());
 
 		try
 		{
@@ -199,45 +199,8 @@ class SessionManager
 		return $this->db->setQuery($query)->loadObject() ?: null;
 	}
 
-	private function expiryFrom(Date $from): Date
-	{
-		$expires = clone $from;
-		$expires->add(new \DateInterval('PT' . $this->getTtl() . 'S'));
-
-		return $expires;
-	}
-
 	private function getTtl(): int
 	{
 		return (int) ComponentHelper::getParams('com_mcp4j')->get('session_ttl', 3600);
-	}
-
-	private function generateSessionId(): string
-	{
-		return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-	}
-
-	/**
-	 * Deliberately JSON, not PHP serialize()/unserialize(): this blob round-trips through the
-	 * database under a client-supplied `Mcp-Session-Id`, so unserializing arbitrary objects back
-	 * out of it would be a PHP object injection gadget waiting to happen. Joomla's own session
-	 * state for the things MCP4j cares about (list model pagination/filter state, etc.) is scalar
-	 * and array data, so JSON loses nothing we need.
-	 */
-	private function serializeSession(SessionInterface $session): string
-	{
-		return json_encode($session->all()) ?: '[]';
-	}
-
-	private function unserializeSession(string $data): array
-	{
-		if ($data === '')
-		{
-			return [];
-		}
-
-		$data = json_decode($data, true);
-
-		return is_array($data) ? $data : [];
 	}
 }

@@ -22,3 +22,12 @@
 
 ### Temporary plan files
 /.plans
+
+### Integration test harness (Docker-provisioned, throwaway per run)
+/tests/integration/docker/.env
+/tests/integration/docker/www
+/tests/integration/inbox
+
+### PHPUnit
+/.phpunit.result.cache
+/.phpunit.cache

@@ -48,6 +48,14 @@ class Mcp4j extends CMSPlugin implements SubscriberInterface
 			// already maps to a real document type. Without this, Joomla defaults every route's negotiable
 			// formats to only `application/vnd.api+json`, which a plain JSON-RPC client won't be offering.
 			'format'    => ['application/json', 'application/vnd.api+json'],
+			// Not actually public — see ServerController::attemptLogin(). A non-public route makes
+			// ApiApplication::route() call $this->login() itself and *throw* Access\Exception\
+			// AuthenticationFailed when it fails, before our controller ever runs. That exception is
+			// constructed with no arguments, so Joomla's own JsonRenderer — which only trusts
+			// $error->getCode() when it's greater than 0 — renders it as a bare HTTP 500 instead of 401.
+			// Marking the route public skips that forced call so we can call $this->login() ourselves,
+			// inside the controller, and turn a failure into our own proper 401 JSON-RPC error instead.
+			'public'    => true,
 		];
 
 		$routes = [

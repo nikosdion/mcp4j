@@ -10,6 +10,8 @@ namespace Akeeba\Component\Mcp4j\Api\Controller;
 defined('_JEXEC') || die;
 
 use Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager;
+use Akeeba\Component\Mcp4j\Administrator\Support\JsonRpcRequest;
+use Akeeba\Component\Mcp4j\Administrator\Support\JsonRpcRequestException;
 use Akeeba\Component\Mcp4j\Api\Exception\JsonRpcException;
 use Joomla\CMS\Factory;
 use Joomla\CMS\MVC\Controller\ApiController;
@@ -61,41 +63,30 @@ class ServerController extends ApiController
 	 */
 	public function dispatch()
 	{
-		// Deliberately not $this->input->getRaw(): depending on how the controller was constructed, $this->input
-		// is only guaranteed to be a Joomla\Input\Input, not the Joomla\Input\Json subclass that method lives on.
-		// php://input is safely re-readable here (we're not multipart/form-data), and ApiApplication's own Json
-		// input already read it the same way when it built the input object in the first place.
-		$request = json_decode((string) file_get_contents('php://input'), true);
-
-		if (json_last_error() !== JSON_ERROR_NONE || !is_array($request) || array_is_list($request))
+		try
 		{
-			$this->respondError(null, -32600, 'Invalid Request: expected a single JSON-RPC 2.0 request object.', 400);
+			// Deliberately not $this->input->getRaw(): depending on how the controller was constructed,
+			// $this->input is only guaranteed to be a Joomla\Input\Input, not the Joomla\Input\Json subclass
+			// that method lives on. php://input is safely re-readable here (we're not multipart/form-data),
+			// and ApiApplication's own Json input already read it the same way when it built the input
+			// object in the first place.
+			$request = JsonRpcRequest::fromRawBody((string) file_get_contents('php://input'));
+		}
+		catch (JsonRpcRequestException $e)
+		{
+			$this->respondError($e->getRequestId(), $e->getCode(), $e->getMessage(), 400);
 
 			return;
 		}
 
-		$id     = $request['id'] ?? null;
-		$method = $request['method'] ?? null;
-		$params = is_array($request['params'] ?? null) ? $request['params'] : [];
-
-		if (($request['jsonrpc'] ?? null) !== '2.0' || !is_string($method) || $method === '')
+		if ($request->method === 'initialize')
 		{
-			$this->respondError($id, -32600, 'Invalid Request: expected a JSON-RPC 2.0 request object.', 400);
+			$this->handleInitialize($request->id, $request->params, $request->isNotification);
 
 			return;
 		}
 
-		// Per JSON-RPC 2.0, a request with no `id` member at all is a notification: it gets no response body.
-		$isNotification = !array_key_exists('id', $request);
-
-		if ($method === 'initialize')
-		{
-			$this->handleInitialize($id, $params, $isNotification);
-
-			return;
-		}
-
-		if ($method === 'notifications/initialized')
+		if ($request->method === 'notifications/initialized')
 		{
 			$this->respondAccepted();
 
@@ -103,7 +94,7 @@ class ServerController extends ApiController
 		}
 
 		// Every other method requires an already-established MCP session.
-		$sessionId = $this->requireSession($id);
+		$sessionId = $this->requireSession($request->id);
 
 		if ($sessionId === null)
 		{
@@ -113,7 +104,7 @@ class ServerController extends ApiController
 
 		try
 		{
-			$result = $this->dispatchMethod($method, $params);
+			$result = $this->dispatchMethod($request->method, $request->params);
 			$error  = null;
 		}
 		catch (JsonRpcException $e)
@@ -125,7 +116,7 @@ class ServerController extends ApiController
 		$this->getSessionManager()->persist($this->app->getSession(), $sessionId);
 		$this->pruneIfConfigured();
 
-		if ($isNotification)
+		if ($request->isNotification)
 		{
 			$this->respondAccepted();
 
@@ -134,12 +125,12 @@ class ServerController extends ApiController
 
 		if ($error !== null)
 		{
-			$this->respondError($id, $error->getCode(), $error->getMessage());
+			$this->respondError($request->id, $error->getCode(), $error->getMessage());
 
 			return;
 		}
 
-		$this->respondResult($id, $result);
+		$this->respondResult($request->id, $result);
 	}
 
 	/**
@@ -287,8 +278,23 @@ class ServerController extends ApiController
 		return $sessionId;
 	}
 
+	/**
+	 * Resolves the bearer token into a Joomla user, or null if that fails.
+	 *
+	 * Our routes are marked `public => true` specifically so this — not
+	 * `ApiApplication::route()`'s own forced pre-dispatch login-or-throw — is what decides how an
+	 * authentication failure gets reported. See the `public` entry in
+	 * {@see \Akeeba\Plugin\WebServices\Mcp4j\Extension\Mcp4j::registerRoutes()} for why: Joomla's own
+	 * path throws {@see \Joomla\CMS\Access\Exception\AuthenticationFailed} with no arguments, which its
+	 * JsonRenderer turns into a bare HTTP 500 instead of a 401.
+	 */
 	private function getAuthenticatedUserId(): ?int
 	{
+		if (!$this->app->login(['username' => ''], ['silent' => true, 'action' => 'core.login.api']))
+		{
+			return null;
+		}
+
 		$identity = $this->app->getIdentity();
 
 		if ($identity === null || $identity->guest)

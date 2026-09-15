@@ -8,8 +8,11 @@
 // Protect from unauthorized access
 defined('_JEXEC') or die();
 
+use Joomla\CMS\Factory;
 use Joomla\CMS\Installer\InstallerScript;
 use Joomla\CMS\Log\Log;
+use Joomla\Database\DatabaseInterface;
+use Joomla\Database\ParameterType;
 
 class Pkg_Mcp4jInstallerScript extends InstallerScript
 {
@@ -69,6 +72,10 @@ class Pkg_Mcp4jInstallerScript extends InstallerScript
 			return true;
 		}
 
+		// Both plugins do nothing while disabled — plg_webservices_mcp4j not being enabled means the whole
+		// MCP endpoint 404s, and there'd be no obvious reason why to someone who just installed the package.
+		$this->enablePlugins(['webservices' => 'mcp4j', 'task' => 'mcp4j']);
+
 		// Forcibly create the autoload_psr4.php file afresh.
 		if (class_exists(JNamespacePsr4Map::class))
 		{
@@ -109,6 +116,44 @@ class Pkg_Mcp4jInstallerScript extends InstallerScript
 		$this->invalidateFiles();
 
 		return true;
+	}
+
+	/**
+	 * Enables plugins by folder => element, e.g. ['webservices' => 'mcp4j'].
+	 *
+	 * Joomla installs plugins disabled by default. Without this, a fresh install of this package would
+	 * leave plg_webservices_mcp4j disabled and the entire MCP endpoint 404ing, with no obvious reason
+	 * why to someone who just installed the package.
+	 */
+	private function enablePlugins(array $foldersByElement): void
+	{
+		if (empty($foldersByElement))
+		{
+			return;
+		}
+
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+
+		foreach ($foldersByElement as $folder => $element)
+		{
+			$query = $db->getQuery(true)
+				->update($db->quoteName('#__extensions'))
+				->set($db->quoteName('enabled') . ' = 1')
+				->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+				->where($db->quoteName('folder') . ' = :folder')
+				->where($db->quoteName('element') . ' = :element')
+				->bind(':folder', $folder, ParameterType::STRING)
+				->bind(':element', $element, ParameterType::STRING);
+
+			try
+			{
+				$db->setQuery($query)->execute();
+			}
+			catch (\Throwable $e)
+			{
+				// Not fatal: the site owner can still enable the plugin by hand from the Plugins manager.
+			}
+		}
 	}
 
 	private function invalidateFiles()
