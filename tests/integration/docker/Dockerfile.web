@@ -3,10 +3,14 @@
 # A single container serves the Joomla site (mod_php, not FPM) and doubles as
 # the CLI environment run-tests.sh uses (via `docker compose exec web ...`) to
 # acquire/install Joomla, build/install pkg_mcp4j, provision an API token and
-# run PHPUnit itself (phpunit-11.phar is baked in below).
+# run PHPUnit itself (baked in below — see the PHPUnit-version-selection RUN
+# step for why it isn't just always phpunit-11.phar).
 
 ARG PHP_VERSION=8.3
 FROM php:${PHP_VERSION}-apache
+
+# ARGs declared before FROM don't survive it; redeclare to use it below.
+ARG PHP_VERSION
 
 # mlocati's installer resolves the correct extension build for the base image.
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
@@ -43,9 +47,20 @@ RUN apt-get update \
 # container; the actual `phing git` build normally runs on the host).
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
-# PHPUnit 11 phar — no PHPUnit dependency is added to composer.json because
-# component/backend/vendor/ is shipped inside the Joomla extension package.
-ADD https://phar.phpunit.de/phpunit-11.phar /usr/local/bin/phpunit
-RUN chmod +x /usr/local/bin/phpunit
+# PHPUnit phar — no PHPUnit dependency is added to composer.json because
+# component/backend/vendor/ is shipped inside the Joomla extension package (see
+# phpunit.xml's docblock: it's installed globally on the host, and inside this
+# container purely as a phar). PHPUnit 11 requires PHP >= 8.2 and refuses to even
+# start on PHP 8.1 (which JOOMLA_MATRIX pairs with Joomla 4.4/5.4 — see
+# ../README.md, "Why these versions"), so this can't be a single hardcoded phar
+# version the way it could when every matrix entry shared one PHP version.
+# PHPUnit 10.5 (its LTS release) is the newest line that still supports PHP 8.1.
+RUN set -eux; \
+    case "${PHP_VERSION}" in \
+      8.1) phpunitMajor=10 ;; \
+      *)   phpunitMajor=11 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/phpunit "https://phar.phpunit.de/phpunit-${phpunitMajor}.phar"; \
+    chmod +x /usr/local/bin/phpunit
 
 COPY php.ini /usr/local/etc/php/conf.d/zz-mcp4j-itest.ini

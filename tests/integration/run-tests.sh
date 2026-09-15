@@ -2,23 +2,29 @@
 #
 # Integration test orchestrator for MCP4j.
 #
-# Provisions a throwaway Joomla site (major 4, 5 and/or 6) inside Docker,
-# builds and installs pkg_mcp4j, mints a Joomla API token and runs the
-# PHPUnit integration suite (phpunit-integration.xml) against it over real
-# HTTP.
+# Provisions a throwaway Joomla site inside Docker, builds and installs
+# pkg_mcp4j, mints a Joomla API token and runs the PHPUnit integration suite
+# (phpunit-integration.xml) against it over real HTTP.
 #
 # Usage:
-#   tests/integration/run-tests.sh                 # test Joomla 4, 5 and 6
-#   tests/integration/run-tests.sh 6                # only Joomla 6
-#   tests/integration/run-tests.sh 5 6              # Joomla 5 and 6
+#   tests/integration/run-tests.sh                 # the whole JOOMLA_MATRIX (docker/.env)
+#   tests/integration/run-tests.sh 6                # only Joomla 6 (PHP from JOOMLA_MATRIX, else PHP_VERSION)
+#   tests/integration/run-tests.sh 4.4 5.4          # Joomla 4.4 and 5.4
 #   tests/integration/run-tests.sh 6 --keep         # leave the stack running
 #   tests/integration/run-tests.sh 6 -- --filter=InitializeTest
 #
-# Arguments before a bare `--` that look like a major version (4, 5, 6, ...)
-# select which Joomla majors to test (default: 4 5 6). `--keep` leaves the
-# Docker stack running after the run instead of tearing it down. Anything
-# after `--` (or any other unrecognised argument) is passed through to
-# PHPUnit.
+# Arguments before a bare `--` that look like a Joomla version (a full
+# version, a branch, or a bare major — 4, 4.4, 5.4.1, 6, ...) select which
+# Joomla versions to test. With none given, every `joomla:php` pair in
+# JOOMLA_MATRIX (docker/env.dist, copied to docker/.env on first run) is
+# tested — see tests/integration/README.md, "Why these versions", for why
+# it contains exactly the entries it does. A version given explicitly that
+# isn't in JOOMLA_MATRIX falls back to PHP_VERSION from the same file.
+#
+# `--keep` leaves the Docker stack running after the run instead of tearing
+# it down (only meaningful for a single-version run — see run_matrix()).
+# Anything after a bare `--` (or any other unrecognised argument) is passed
+# through to PHPUnit.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,7 +54,7 @@ cd "${DOCKER_DIR}"
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
-MAJORS=()
+REQUESTED_VERSIONS=()
 KEEP=0
 PHPUNIT_ARGS=()
 
@@ -63,7 +69,7 @@ while [ $# -gt 0 ]; do
 			while [ $# -gt 0 ]; do PHPUNIT_ARGS+=("$1"); shift; done
 			;;
 		[0-9]*)
-			MAJORS+=("$1")
+			REQUESTED_VERSIONS+=("$1")
 			shift
 			;;
 		*)
@@ -73,10 +79,6 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-if [ "${#MAJORS[@]}" -eq 0 ]; then
-	MAJORS=(4 5 6)
-fi
-
 # ---------------------------------------------------------------------------
 # Environment: create .env from template, load it.
 # ---------------------------------------------------------------------------
@@ -85,6 +87,7 @@ set -a
 . ./.env
 set +a
 
+: "${JOOMLA_MATRIX:?JOOMLA_MATRIX is not set (see docker/env.dist)}"
 : "${DB_IMAGE:=mariadb:11.4}"
 : "${DB_ROOT_PASSWORD:=rootpw}"
 : "${DB_NAME:=joomla_test}"
@@ -93,6 +96,37 @@ set +a
 : "${DB_PREFIX:=jtest_}"
 : "${WEB_PORT:=8180}"
 : "${PHP_VERSION:=8.3}"
+
+# Looks up the PHP version paired with a Joomla version in JOOMLA_MATRIX. Prints nothing
+# (and returns non-zero) if that exact string isn't a matrix entry's Joomla side.
+php_for_matrix_entry() {
+	local want="$1" pair
+	for pair in ${JOOMLA_MATRIX}; do
+		if [ "${pair%%:*}" = "${want}" ]; then
+			printf '%s' "${pair#*:}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Resolve the list of "joomla:php" pairs to run.
+PAIRS=()
+if [ "${#REQUESTED_VERSIONS[@]}" -eq 0 ]; then
+	log "No version given — running the whole matrix: ${JOOMLA_MATRIX}"
+	for pair in ${JOOMLA_MATRIX}; do
+		PAIRS+=("${pair}")
+	done
+else
+	for v in "${REQUESTED_VERSIONS[@]}"; do
+		if phpv="$(php_for_matrix_entry "${v}")"; then
+			PAIRS+=("${v}:${phpv}")
+		else
+			warn "Joomla ${v} is not a JOOMLA_MATRIX entry; using PHP_VERSION=${PHP_VERSION} for it."
+			PAIRS+=("${v}:${PHP_VERSION}")
+		fi
+	done
+fi
 
 # ---------------------------------------------------------------------------
 # Admin credentials, used consistently across install + token provisioning.
@@ -108,10 +142,11 @@ mkdir -p "${WWW_DIR}" "${INBOX_DIR}"
 # ---------------------------------------------------------------------------
 # Stack bring-up / tear-down
 # ---------------------------------------------------------------------------
-bring_up_stack() {
-	log "Building and starting the LAMP stack (PHP ${PHP_VERSION}, DB ${DB_IMAGE})"
-	DC build >/dev/null
-	DC up -d db web
+# The database is started once and reused (reset_database wipes it) across every matrix
+# entry; only `web` is rebuilt per entry, since that's the piece whose PHP version varies.
+start_database() {
+	log "Starting the database (${DB_IMAGE})"
+	DC up -d db
 
 	log "Waiting for the database to become healthy"
 	local tries=0
@@ -121,6 +156,14 @@ bring_up_stack() {
 		sleep 2
 	done
 	ok "Database is healthy"
+}
+
+# Rebuilds and (re)starts `web` for the given PHP version.
+build_and_start_web() {
+	local phpVersion="$1"
+	log "Building and starting the web container (PHP ${phpVersion})"
+	PHP_VERSION="${phpVersion}" DC build web >/dev/null
+	PHP_VERSION="${phpVersion}" DC up -d --force-recreate web
 
 	log "Waiting for the web server to answer"
 	local wtries=0
@@ -129,7 +172,7 @@ bring_up_stack() {
 		[ "${wtries}" -gt 30 ] && die "The web server did not become reachable on port ${WEB_PORT}."
 		sleep 2
 	done
-	ok "Web server is up"
+	ok "Web server is up (PHP ${phpVersion})"
 }
 
 teardown_stack() {
@@ -156,8 +199,14 @@ reset_database() {
 # pkg_mcp4j build / install / token provisioning
 # ---------------------------------------------------------------------------
 PACKAGE_ZIP=""
+SKIP_BUILD=0
 
 build_package() {
+	if [ "${SKIP_BUILD}" -eq 1 ] && [ -n "${PACKAGE_ZIP}" ]; then
+		ok "Reusing $(basename "${PACKAGE_ZIP}") (built once for this matrix run)"
+		return 0
+	fi
+
 	log "Building pkg_mcp4j (phing git)"
 	command -v phing >/dev/null 2>&1 || die "phing is not on PATH (needed to build pkg_mcp4j). It requires the sibling ../buildfiles checkout."
 	( cd "${REPO_ROOT}" && phing git ) || die "phing git failed."
@@ -195,7 +244,7 @@ provision_token() {
 # PHPUnit
 # ---------------------------------------------------------------------------
 run_phpunit() {
-	log "Running the integration test suite (Joomla ${JOOMLA_RESOLVED})"
+	log "Running the integration test suite (Joomla ${JOOMLA_RESOLVED}, PHP ${1})"
 
 	if [ "${#PHPUNIT_ARGS[@]}" -gt 0 ]; then
 		DC exec -T \
@@ -211,28 +260,24 @@ run_phpunit() {
 }
 
 # ---------------------------------------------------------------------------
-# Main
+# One version:php pair, start to finish. Run in a subshell by the caller so that
+# die() (which calls exit) only ends this one entry, not the whole matrix.
 # ---------------------------------------------------------------------------
-log "MCP4j integration harness — Joomla majors: ${MAJORS[*]}"
+run_one() {
+	local wantVersion="$1" phpVersion="$2"
 
-bring_up_stack
-
-OVERALL_STATUS=0
-SUMMARY_MAJOR=()
-SUMMARY_VERSION=()
-SUMMARY_RESULT=()
-
-for major in "${MAJORS[@]}"; do
-	log "=== Joomla ${major} ==="
-
-	if ! acquire_joomla "${major}"; then
-		warn ">>> SKIP Joomla ${major}: no stable release could be resolved"
-		SUMMARY_MAJOR+=("${major}")
-		SUMMARY_VERSION+=("-")
-		SUMMARY_RESULT+=("SKIP")
-		continue
+	if ! acquire_joomla "${wantVersion}"; then
+		warn ">>> SKIP Joomla ${wantVersion}: no stable release could be resolved"
+		return 2
 	fi
 
+	# Report the resolved version back to the parent shell now, while we're sure to run:
+	# RESOLVED_FILE is inherited from the parent (subshells see parent variables), but
+	# variable *assignments* made here never propagate back, and a later exit/die further
+	# down would skip any "report it after the fact" step placed after this function call.
+	printf '%s' "${JOOMLA_RESOLVED}" > "${RESOLVED_FILE}"
+
+	build_and_start_web "${phpVersion}"
 	clean_www
 	extract_joomla
 	reset_database
@@ -240,19 +285,58 @@ for major in "${MAJORS[@]}"; do
 	build_package
 	install_package
 	provision_token
+	run_phpunit "${phpVersion}"
+}
 
-	MAJOR_STATUS=0
-	run_phpunit || MAJOR_STATUS=1
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+log "MCP4j integration harness — pairs: ${PAIRS[*]}"
 
-	if [ "${MAJOR_STATUS}" -ne 0 ]; then
+start_database
+
+# pkg_mcp4j itself doesn't vary by Joomla/PHP version, so build it once up front and
+# force every entry below to reuse that one package instead of rebuilding it each time.
+build_package
+SKIP_BUILD=1
+
+OVERALL_STATUS=0
+SUMMARY_PAIR=()
+SUMMARY_VERSION=()
+SUMMARY_RESULT=()
+RESOLVED_FILE="$(mktemp)"
+trap 'rm -f "${RESOLVED_FILE}"' EXIT
+
+for pair in "${PAIRS[@]}"; do
+	wantVersion="${pair%%:*}"
+	phpVersion="${pair#*:}"
+
+	echo
+	log "=== Joomla ${wantVersion} / PHP ${phpVersion} ==="
+
+	: > "${RESOLVED_FILE}"
+	entry_status=0
+	# run_one() itself runs in a subshell so die() (which calls exit) only ends this one
+	# entry, not the whole matrix; RESOLVED_FILE is how it reports the resolved version
+	# back out, since subshell variable changes aren't visible here.
+	( run_one "${wantVersion}" "${phpVersion}" ) || entry_status=$?
+
+	if [ "${entry_status}" -eq 2 ]; then
+		SUMMARY_PAIR+=("${pair}")
+		SUMMARY_VERSION+=("-")
+		SUMMARY_RESULT+=("SKIP")
+		continue
+	fi
+
+	if [ "${entry_status}" -ne 0 ]; then
 		OVERALL_STATUS=1
 		SUMMARY_RESULT+=("FAIL")
 	else
 		SUMMARY_RESULT+=("PASS")
 	fi
 
-	SUMMARY_MAJOR+=("${major}")
-	SUMMARY_VERSION+=("${JOOMLA_RESOLVED}")
+	SUMMARY_PAIR+=("${pair}")
+	SUMMARY_VERSION+=("$(cat "${RESOLVED_FILE}" 2>/dev/null || echo "${wantVersion}")")
 done
 
 if [ "${KEEP}" -eq 1 ]; then
@@ -262,10 +346,10 @@ else
 fi
 
 echo
-log "Summary"
+log "Summary (joomla:php requested -> resolved -> result)"
 i=0
-while [ "${i}" -lt "${#SUMMARY_MAJOR[@]}" ]; do
-	printf "  Joomla %-3s  version %-12s  %s\n" "${SUMMARY_MAJOR[$i]}" "${SUMMARY_VERSION[$i]}" "${SUMMARY_RESULT[$i]}"
+while [ "${i}" -lt "${#SUMMARY_PAIR[@]}" ]; do
+	printf "  %-10s  resolved %-10s  %s\n" "${SUMMARY_PAIR[$i]}" "${SUMMARY_VERSION[$i]}" "${SUMMARY_RESULT[$i]}"
 	i=$((i + 1))
 done
 
