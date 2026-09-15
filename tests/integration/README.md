@@ -60,14 +60,21 @@ doesn't vary by Joomla/PHP version.
    `script.mcp4j.php`'s postflight enables `plg_webservices_mcp4j` and `plg_task_mcp4j`
    automatically — no manual enable step needed here, and this is itself covered indirectly
    (`InitializeTest` would 404 immediately if it weren't).
-6. Mints an API token for the installer's admin user via `docker/provision-token.php` — a standalone
+6. Installs any optional third-party packages dropped into `inbox/extensions/` — see "Third-party
+   extensions" below.
+7. Fixes web root ownership (`chown -R www-data:www-data`) — Joomla and every extension above were
+   installed as root via `DC exec`, but Apache serves as `www-data`; any tool that writes a file
+   (config, media, language overrides, ...) would fail otherwise on a Linux Docker host.
+8. Mints an API token for the installer's admin user via `docker/provision-token.php` — a standalone
    script that replicates what `plugins/user/token` writes to `#__user_profiles` when a site owner
    ticks "Enable Token Based Authentication" on their profile, since Joomla has no CLI command for
    this. See that file's docblock for exactly which core classes it's mirroring.
-7. Runs `phpunit -c phpunit-integration.xml` inside the container, with `MCP4J_BASE_URL` and
-   `MCP4J_API_TOKEN` set.
-8. Tears the whole stack down after the last entry (`--keep` to skip this and iterate quickly against
-   a single version — re-running just step 7 against a kept-up stack takes seconds).
+9. Provisions a low-privilege API user and mints its token — see "Low-privilege user" below.
+10. Writes both tokens to `docker/.tokens` (`chmod 600`, gitignored) for `quick.sh` to reuse.
+11. Runs `phpunit -c phpunit-integration.xml` inside the container, with `MCP4J_BASE_URL`,
+    `MCP4J_API_TOKEN` and `MCP4J_LOWPRIV_TOKEN` set.
+12. Tears the whole stack down after the last entry (`--keep` to skip this and iterate quickly against
+    a single version — see "Quick re-run" below).
 
 Each matrix entry runs in a subshell, so one entry failing (or hitting an internal `die()`, e.g. a
 Docker or download failure) reports that entry as FAILED and moves on to the next one rather than
@@ -101,6 +108,129 @@ documented, stable API — the login()/`AuthenticationFailed` bug this suite alr
 is a direct example. Re-run `audit-e2e-matrix` periodically to keep `JOOMLA_MATRIX` current as new
 Joomla releases ship, the declared floor/ceiling in `script.mcp4j.php` moves, or PHP 8.6 ships.
 
+## Parallel runs from git worktrees
+
+Several `pkg_mcp4j` git worktrees (one per plan branch) can run this harness **at the same time**
+without colliding, as long as each uses its own Docker Compose project name and host port:
+
+```
+COMPOSE_PROJECT_NAME=mcp4j-itest-p04 WEB_PORT=8184 tests/integration/run-tests.sh 6 --keep
+```
+
+Both `run-tests.sh` and `quick.sh` let a `COMPOSE_PROJECT_NAME`/`WEB_PORT` (also `JOOMLA_MATRIX` /
+`PHP_VERSION`) already set in the *process* environment win over the same name's value in `docker/.env`
+— the file's own defaults (`mcp4j-itest` / `8180`) are only ever a fallback for a bare invocation with
+nothing set. A worktree's `docker/.env` may also just set these directly (`COMPOSE_PROJECT_NAME=...` /
+`WEB_PORT=...` appended to the file) if you'd rather not repeat them on every invocation; either way
+works, the environment always wins.
+
+The database and web containers, the bind-mounted `www/` docroot, and `docker/.tokens` are all scoped
+per Compose project, so nothing is shared between worktrees except the read-only Joomla/extension
+package cache (`inbox/`, symlinked from a common location — see its target).
+
+## Low-privilege user
+
+Every provisioned site also gets a second, deliberately low-privilege API user (username `lowpriv`,
+"Registered" group only, no elevated ACL), provisioned by `docker/provision-lowpriv-user.php` and
+token-minted the same way as the admin user. This exists so tool tests can prove ACL enforcement for
+real — call a tool as `lowpriv` and assert it's refused (`assertPermissionDenied()`), rather than only
+ever exercising the happy path as a Super User for whom every check trivially passes.
+
+A stock Joomla install refuses this user at the Web Services API layer entirely (no `core.login.api`,
+and the token-authentication plugin doesn't allow the group by default) — see the script's own docblock
+for exactly what it grants and why, and why it only ever *adds* to existing grants rather than replacing
+them.
+
+The token is exposed to the integration suite as `MCP4J_LOWPRIV_TOKEN` and, in `AbstractToolTestCase`,
+as `self::$lowPrivToken` / `callToolAsLowPriv()`. It's empty (and dependent tests skip via
+`markTestSkipped()`, not fail) when running PHPUnit directly without going through `run-tests.sh` /
+`quick.sh`.
+
+## Third-party extensions
+
+Some tool categories (Panopticon, Tickets, Admin Tools, Akeeba Backup, ...) only exist when the
+matching third-party extension is installed. Drop their release zips into
+`tests/integration/inbox/extensions/` (already gitignored, via `inbox/`) — e.g.
+`pkg_panopticon-*.zip`, `pkg_ats-*.zip`, `pkg_admintools-*.zip`, `pkg_akeebabackup-*.zip`. Every `*.zip`
+found there is installed, sorted by filename (prefix with `10-`, `20-`, ... to control install order
+when one package depends on another). A failed install of one package is logged as a warning, not a
+fatal error — the tests that depend on it just skip (via `requireToolsOrSkip()`) instead of failing the
+whole run.
+
+Override the directory with `MCP4J_EXTRA_PACKAGES_DIR` if you'd rather keep packages somewhere else.
+When the directory doesn't exist or is empty, this step is a no-op.
+
+## Quick re-run (`quick.sh`)
+
+Once a stack is up (`run-tests.sh 6 --keep`), re-running PHPUnit against it directly (skipping the
+entire provision) takes seconds:
+
+```
+tests/integration/quick.sh                                  # re-run PHPUnit as-is
+tests/integration/quick.sh -- --filter=SomeTest              # ...filtered
+tests/integration/quick.sh --reinstall                       # pick up code changes first
+tests/integration/quick.sh --reinstall -- --filter=SomeTest
+```
+
+`--reinstall` runs `phing git`, upgrade-installs the freshly built `release/pkg_mcp4j-*.zip` over the
+kept stack's existing install, and fixes web root ownership again — use it whenever you've changed
+anything under `component/` or `plugins/` and want the running site to reflect it. It does **not**
+reinstall the third-party packages from `inbox/extensions/` (those don't change between quick.sh runs).
+
+`quick.sh` reads `docker/.env` and `docker/.tokens` (both written by `run-tests.sh`) and refuses to run
+if the `web` service isn't up — it's meant purely as the fast half of the edit-test loop, not a
+replacement for `run-tests.sh`.
+
+## Writing tool tests (`AbstractToolTestCase`)
+
+Once real MCP tools exist, one test class per tool class extends
+`Akeeba\Mcp4j\Tests\Integration\AbstractToolTestCase` (`tests/integration/src/AbstractToolTestCase.php`)
+instead of `AbstractE2ETestCase` directly. It adds one-line helpers for calling tools and asserting on
+their `{"content":[{"type":"text","text":"..."}],"isError":bool}` result envelope, session handling
+(sessions are bound to the user that created them — a different token needs a different session, handled
+for you), and fixture cleanup:
+
+```php
+namespace Akeeba\Mcp4j\Tests\Integration\Tests\Content;
+
+use Akeeba\Mcp4j\Tests\Integration\AbstractToolTestCase;
+
+class ArticlesTest extends AbstractToolTestCase
+{
+    public function testCreateReadUpdateTrashDelete(): void
+    {
+        $title = $this->uniqueName('MCP4j Test Article');
+
+        $created = $this->callToolOk('content_articles_create', ['title' => $title]);
+        $id      = $created['id'];
+
+        $this->registerCleanup(fn () => $this->callTool('content_articles_delete', ['id' => $id]));
+
+        $read = $this->callToolOk('content_articles_read', ['id' => $id]);
+        $this->assertSame($title, $read['title']);
+        $this->assertKeysAbsent($read, ['password', 'otpKey']);
+
+        $updated = $this->callToolOk('content_articles_update', ['id' => $id, 'title' => $title . ' v2']);
+        $this->assertSame($title . ' v2', $updated['title']);
+
+        $this->assertNotFound($this->callTool('content_articles_read', ['id' => 999999999]));
+    }
+
+    public function testWriteIsRefusedForTheLowPrivilegeUser(): void
+    {
+        $result = $this->callToolAsLowPriv('content_articles_create', ['title' => $this->uniqueName('x')]);
+        $this->assertPermissionDenied($result);
+    }
+}
+```
+
+See `AbstractToolTestCase`'s own docblocks for the full helper list (`callTool()`, `callToolOk()`,
+`callToolError()`, `callToolAsLowPriv()`, `callToolRpcError()`, `assertListShape()`,
+`assertKeysAbsent()`/`assertKeysPresent()`, `uniqueName()`/`uniqueAlias()`, `registerCleanup()`,
+`requireToolsOrSkip()`). `tests/integration/src/Tests/HarnessSelfTest.php` is a working example of using
+the low-privilege token and session isolation directly, and doubles as the harness's own regression
+test.
+
 ## What's covered
 
 - `InitializeTest` — `initialize`: the result shape, session minting, one session per call,
@@ -115,7 +245,13 @@ Joomla releases ship, the declared floor/ceiling in `script.mcp4j.php` moves, or
   revision), a missing `jsonrpc` member, the `id` being echoed back on an otherwise-invalid request,
   and a request sent with no `Accept` header at all (curl always sends `Accept: */*` by default, so
   this deliberately strips it).
+- `HarnessSelfTest` — regression guard for the harness pieces themselves (not a real tool): the
+  low-privilege user can `initialize`, and a session minted by one user is refused (404) when replayed
+  with a different user's token, in both directions; `AbstractToolTestCase::uniqueName()`/
+  `uniqueAlias()` produce the expected shapes. Skips (not fails) its low-privilege assertions when
+  `MCP4J_LOWPRIV_TOKEN` isn't set.
 
 Not yet covered, because the feature doesn't exist yet: any real MCP tool. Once `ServerController`'s
-`handleToolsList()`/`handleToolsCall()`/`dispatchMethod()` grow actual tools, this suite is the right
-place for their end-to-end coverage.
+`handleToolsList()`/`handleToolsCall()`/`dispatchMethod()` grow actual tools, this suite (via
+`AbstractToolTestCase` — see "Writing tool tests" above) is the right place for their end-to-end
+coverage.
