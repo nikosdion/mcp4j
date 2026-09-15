@@ -395,6 +395,24 @@ class ServerController extends ApiController
 	{
 		$header = $this->input->server->getString('HTTP_AUTHORIZATION', '');
 
+		// Apache + mod_php never populates HTTP_AUTHORIZATION (see
+		// https://github.com/symfony/symfony/issues/19693) — mirrors the same fallback Joomla core's own
+		// plugins/api-authentication/token plugin uses, so this method sees the token exactly like core
+		// authentication already does, needed for SecretLeakGuard to protect the current request's own
+		// bearer token.
+		if (
+			$header === '' && \PHP_SAPI === 'apache2handler'
+			&& \function_exists('apache_request_headers') && apache_request_headers() !== false
+		)
+		{
+			$apacheHeaders = array_change_key_case(apache_request_headers(), CASE_LOWER);
+
+			if (array_key_exists('authorization', $apacheHeaders))
+			{
+				$header = (string) $apacheHeaders['authorization'];
+			}
+		}
+
 		if ($header === '')
 		{
 			$header = $this->input->server->getString('REDIRECT_HTTP_AUTHORIZATION', '');
