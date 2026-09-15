@@ -14,9 +14,21 @@
                 type="number"
                 label="COM_MCP4J_CONFIG_SESSION_TTL_LABEL"
                 description="COM_MCP4J_CONFIG_SESSION_TTL_DESC"
-                default="1800"
+                default="3600"
                 filter="integer"
         />
+
+        <field
+                name="prune_on_request"
+                type="radio"
+                layout="joomla.form.field.radio.switcher"
+                label="COM_MCP4J_CONFIG_PRUNE_ON_REQUEST_LABEL"
+                description="COM_MCP4J_CONFIG_PRUNE_ON_REQUEST_DESC"
+                default="0"
+        >
+            <option value="0">JNO</option>
+            <option value="1">JYES</option>
+        </field>
     </fieldset>
 
     <fieldset

@@ -40,8 +40,11 @@ class ServerController extends ApiController
 	/**
 	 * POST /v1/mcp4j/server — handles a single JSON-RPC 2.0 request (or batch) from an MCP client.
 	 *
-	 * @todo   Implement `initialize`, `tools/list`, `tools/call` and MCP session handling
-	 *         (see .claude/mcp-session-handling.md).
+	 * @todo   Implement `initialize`, `tools/list`, `tools/call`. This is also where the
+	 *         `Mcp-Session-Id` request header needs to be read and handed to
+	 *         {@see \Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager::resume()} before
+	 *         dispatching, and {@see \Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager::persist()}
+	 *         called before the response is sent — see .claude/mcp-session-handling.md.
 	 */
 	public function dispatch()
 	{

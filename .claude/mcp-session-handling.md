@@ -17,8 +17,14 @@ duration of the request and tears it down at the end — it is not persisted to
 the MCP client will send back a Joomla session cookie (it won't; it only knows
 about the `Mcp-Session-Id` header and the `Authorization: Bearer <token>` header).
 
-So: **do not try to piggyback MCP session state on Joomla's PHP session.** Treat
-the two as completely unrelated concerns.
+So: **do not try to piggyback MCP session state on Joomla's PHP session
+mechanism (cookies, `#__session`, session GC).** But we *do* want to reuse the
+in-request `Joomla\Session\Session` object itself as the working store, because
+plenty of existing Joomla MVC code (list model state, pagination limits, etc.)
+reads and writes through it via `Model::getState()`/`Model::setState()` and
+`Application::getUserStateFromRequest()`. Bridging our own persistence into that
+object, rather than inventing a parallel state bag, means MCP tools built on top
+of ordinary Joomla list models get working pagination across calls for free.
 
 ## The approach
 
@@ -27,31 +33,63 @@ Store MCP session state ourselves, explicitly, in a database table owned by
 
 ```
 #__mcp4j_sessions
-  session_id      CHAR(43)     -- random, e.g. base64url(random_bytes(32))
-  user_id         INT UNSIGNED -- the Joomla user resolved from the API token
+  session_id       CHAR(43)     -- random, e.g. base64url(random_bytes(32))
+  user_id          INT UNSIGNED -- the Joomla user resolved from the API token
   protocol_version VARCHAR(16)
-  client_info     TEXT         -- JSON: name/version the client sent at initialize
-  created         DATETIME
-  last_used       DATETIME
-  expires         DATETIME     -- created + TTL, refreshed on each request
+  client_info      TEXT         -- JSON: name/version the client sent at initialize
+  session_data     LONGTEXT     -- serialized snapshot of the whole Joomla\Session\Session
+  created          DATETIME
+  last_active      DATETIME     -- refreshed on every request that uses this session
+  expires          DATETIME     -- last_active + TTL (component option, default 3600s)
 ```
 
-Flow:
+Flow, per request:
 
 1. Client calls `initialize` with no `Mcp-Session-Id` header. The API token in
    `Authorization` is resolved to a Joomla user the normal Web Services way. We
-   mint a session row, return `Mcp-Session-Id` in the response headers.
-2. Every subsequent call includes that header. The webservices plugin / component
-   API controller looks the row up, checks `expires`, checks that `user_id`
-   matches the user resolved from the bearer token this request (defence in depth
-   — a session ID is not itself an auth credential, the token still is), and
-   refreshes `last_used`/`expires`.
-3. A background-eligible cleanup (Joomla scheduled task, or just a
-   probability-based sweep on write) deletes expired rows. No persistent process,
-   so this has to be opportunistic — there is no daemon to run a timer.
-4. `DELETE /server` (or a `notifications/cancelled`-driven end, per spec) or
+   mint a session row (`session_data` starts empty/fresh), return `Mcp-Session-Id`
+   in the response headers.
+2. Every subsequent call includes that header.
+   - **At the start of the request**, the API controller looks the row up by
+     `session_id`, checks `expires`, checks that `user_id` matches the user
+     resolved from the bearer token this request (defence in depth — a session ID
+     is not itself an auth credential, the token still is), and — if valid —
+     unserializes `session_data` and replays it into the current request's
+     `Joomla\Session\Session` object (`$session->set($key, $value)` for every
+     key). This makes the *ephemeral* per-request session look, to any Joomla
+     code that touches it during this request, like a continuation of the
+     previous MCP call.
+   - Normal Joomla code runs (JSON-RPC method dispatch, list model state
+     read/write, etc.), using `$session` as it always would.
+   - **At the end of the request**, we read the *entire* session back out
+     (`$session->all()`), serialize it, and `UPDATE` the same row's
+     `session_data`, `last_active` (= now), and `expires` (= now + TTL). This is
+     a full snapshot-replace, not a merge — whatever the request left in the
+     session is what gets persisted.
+3. `DELETE /server` (or a `notifications/cancelled`-driven end, per spec) or
    simple TTL expiry ends the session. An unknown/expired `Mcp-Session-Id` gets a
-   `404` per the spec, which well-behaved clients treat as "re-initialize."
+   `404` per the spec, which well-behaved clients treat as "re-initialize." A
+   `DELETE` is not guaranteed to ever arrive (crashes, dropped connections,
+   clients that don't bother) — TTL expiry is the real backstop, not the
+   explicit delete.
+4. Expired rows need pruning eventually. Two mechanisms, both hitting the same
+   `SessionManager::pruneExpired()` (which wraps the delete in
+   `$db->lockTable()` / `unlockTables()` — portable across the MySQL, MySQLi,
+   PostgreSQL, SQLite and SQL Server drivers Joomla ships):
+   - **Opportunistic, on-request pruning** — gated behind the `prune_on_request`
+     component option (default **off**). When on, some fraction of MCP requests
+     also runs the prune before/after their own work. This costs a table lock on
+     every triggering request, which is the tradeoff the option name and its
+     on-screen help text call out explicitly.
+   - **`plg_task_mcp4j`, a Joomla Scheduled Task plugin** (task ID
+     `mcp4j.pruneSessions`) that just calls the same
+     `SessionManager::pruneExpired()` on a cron-driven schedule. **This is the
+     recommended approach** — a single, predictable, request-independent sweep
+     instead of extra locking on the request hot path. Document this
+     recommendation in both `README.md` and the component Options page's
+     description text for `prune_on_request`, so a site owner who cares about
+     request latency knows to enable the scheduled task and leave the on-request
+     option off.
 
 This makes MCP session lifecycle entirely our own state machine, independent of
 whatever Joomla's api application does with its ephemeral session per request.
@@ -87,15 +125,31 @@ OAuth authorization server inside a Joomla extension. Document this clearly for
 users: an MCP client configured with a given token acts as that Joomla user,
 full stop.
 
+## Why we need sessions at all (decided)
+
+Considered dropping `Mcp-Session-Id` support altogether (the spec permits a
+server to never hand one out, treating every request as independent) to avoid
+all of the above. Rejected: MCP4j will very likely need to paginate long listings
+(e.g. "list articles" against a large site), and Joomla's own list model
+pagination state is naturally session-scoped. Implementing sessions now avoids
+a breaking rework later.
+
+## Status
+
+- `#__mcp4j_sessions` schema, the `session_ttl` and `prune_on_request` component
+  options, `Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager`, and
+  `plg_task_mcp4j` exist.
+- **Not yet wired up**: `component/api/src/Controller/ServerController.php` does
+  not call `SessionManager::resume()`/`persist()`/`create()` yet — it still
+  replies with a fixed "not implemented" JSON-RPC error for every method. That
+  wiring belongs together with implementing `initialize`, since `initialize` is
+  what decides whether to mint a new row versus resume an existing one, and the
+  request-envelope-level code (read `Mcp-Session-Id` header in, write it out)
+  needs a real method dispatch table to sit around.
+
 ## Open questions to resume on
 
-- Exact TTL for `#__mcp4j_sessions` rows (proposal: 30 min sliding, configurable
-  in component params).
-- Whether `initialize` should be allowed to omit session creation entirely for
-  clients that don't care about session semantics (spec allows a server to opt
-  out of sessions altogether by never returning `Mcp-Session-Id` — simplest
-  possible option, worth considering for v1: treat every request as independent
-  and drop session tracking altogether unless a concrete feature needs it, e.g.
-  tool pagination cursors or multi-step elicitation).
-- Table prefix / install SQL lives under `admin/sql/install.mysql.utf8.sql` per
-  Joomla component convention — not yet created.
+- Whether `prune_on_request`, when on, should run on every request or only
+  probabilistically (e.g. 1-in-N) to bound the lock cost further. Currently
+  undecided — `SessionManager::pruneExpired()` itself doesn't care, this is a
+  call-site decision for whatever wires it into `ServerController`.

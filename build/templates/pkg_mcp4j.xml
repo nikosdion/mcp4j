@@ -23,6 +23,7 @@
         <file type="component" id="com_mcp4j">com_mcp4j.zip</file>
 
         <file type="plugin" group="webservices" id="mcp4j">plg_webservices_mcp4j.zip</file>
+        <file type="plugin" group="task" id="mcp4j">plg_task_mcp4j.zip</file>
     </files>
 
     <languages folder="language">

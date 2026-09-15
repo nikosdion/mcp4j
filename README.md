@@ -9,12 +9,17 @@ and similar) which can only speak HTTP — not stdio — can use it as a tool pr
 it does not run its own listening process; it's served by whatever already handles the site's HTTP requests, which
 makes it deployable on ordinary commercial/shared hosting.
 
-It is made of two extensions, packaged together:
+It is made of three extensions, packaged together:
 
 - **`com_mcp4j`** — owns the database schema and the MCP JSON-RPC dispatch logic, reachable at
   `/api/index.php?/v1/mcp4j/server`.
 - **`plg_webservices_mcp4j`** — a `webservices` plugin that registers that endpoint with Joomla's Web Services API
   router.
+- **`plg_task_mcp4j`** — a Scheduled Task plugin that prunes expired MCP session records. **Install and enable
+  this** (System → Scheduled Tasks → New → "MCP4j - Prune expired sessions"). It's the recommended way to keep
+  `#__mcp4j_sessions` tidy. The component also has an on-request pruning option, off by default, which briefly
+  locks the sessions table on every MCP request instead — only turn that on if you genuinely cannot use Scheduled
+  Tasks on your hosting.
 
 Authentication reuses Joomla's own API tokens (issued per-user from the Users backend). There is no separate OAuth
 2.1 authorization server: an MCP client configured with a given token simply acts as whichever Joomla user issued

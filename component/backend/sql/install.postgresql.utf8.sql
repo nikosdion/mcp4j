@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS "#__mcp4j_sessions" (
     "user_id"          BIGINT NOT NULL,
     "protocol_version" VARCHAR(16) NOT NULL DEFAULT '',
     "client_info"      TEXT NOT NULL DEFAULT '',
+    "session_data"     TEXT NOT NULL DEFAULT '',
     "created"          TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    "last_used"        TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    "last_active"      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "expires"          TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     PRIMARY KEY ("session_id")
 );
