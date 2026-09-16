@@ -20,24 +20,21 @@ use Akeeba\Mcp4j\Tests\Integration\AbstractToolTestCase;
  * `component/backend/src/Tool/Content/Articles.php:145-180` and
  * `component/backend/src/Mapper/Content/ArticleMapper.php:234,525-539`.
  *
- * Uses a custom-provisioned "Author" group (group 3) user who has `core.create` and (because a stock
- * Author actually lacks it — see finding below) an additionally-granted `core.manage` on `com_content`,
- * but deliberately NOT `core.edit.state` anywhere — see `docker/provision-author-user.php`'s docblock
- * for the full ACL shape and why the plain stock Author group turned out not to be sufficient on its
- * own to even reach `content_articles_create` at all.
+ * Uses a custom-provisioned "Author" group (group 3) user who has `core.create` and, historically, an
+ * additionally-granted `core.manage` on `com_content`, but deliberately NOT `core.edit.state` anywhere —
+ * see `docker/provision-author-user.php`'s docblock for the full ACL shape.
  *
- * **Additional finding surfaced while building this test (not in the original security.md M3 write-up):**
- * `content_articles_create` gates the *entire* tool behind `requireAuthorised('core.manage', 'com_content')`
- * (`Articles.php:145`) before it ever reaches the per-category `core.create`/`core.edit.state` checks M3
- * is about. A stock Joomla "Author" does NOT have `core.manage` on `com_content` by default (confirmed
- * against a live install's `#__assets.rules` — only Manager/Administrator/Super User do), so a pure
- * stock Author can never reach the vulnerable code path through this tool at all; a call from one is
- * refused immediately with "Permission denied: core.manage on com_content", regardless of `state`. This
- * test therefore grants `core.manage` on `com_content` to the Author test user specifically (a
- * plausible real-world custom-ACL shape: "can manage/create articles but not publish them"), so the
- * actual M3 mechanism can be exercised at all. This outer gate is arguably itself worth a follow-up
- * look (it makes the tool stricter than real Joomla's own backend content-creation flow, which does not
- * require `core.manage` to create/save an article) but is out of scope for M3 itself.
+ * **Historical note (security.md I17, fixed 2026-09-16):** when this test was first written,
+ * `content_articles_create` additionally gated the *entire* tool behind
+ * `requireAuthorised('core.manage', 'com_content')` before ever reaching the per-category
+ * `core.create`/`core.edit.state` checks M3 is about — stricter than real Joomla's own backend
+ * content-creation flow (`ArticleController::allowAdd()`, which only checks `core.create` on the target
+ * category), and a stock Author lacks `com_content`-wide `core.manage` by default, so a pure stock
+ * Author couldn't reach this tool at all without it. That extra gate was removed as I17's fix — a stock
+ * Author's default `core.create` is now sufficient on its own. The Author test user's `core.manage`
+ * grant is kept here as harmless extra permission (this test's actual subject is `core.edit.state`,
+ * still deliberately withheld), rather than removed, to avoid re-touching the shared provisioning
+ * script for an unrelated finding.
  *
  * Every scenario below reads the created article back **as the Super User token** via
  * `content_articles_read` afterwards — never trusting the create call's own echoed response — to

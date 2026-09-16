@@ -142,7 +142,12 @@ class Articles extends AbstractTool
 		?array $metadata = null
 	): array
 	{
-		$this->requireAuthorised('core.manage', self::OPTION);
+		// security.md I17: no component-wide core.manage gate here — real Joomla's own
+		// ArticleController::allowAdd() (the backend controller this tool's write path is modeled on)
+		// checks core.create on the specific target category when one is given, exactly what
+		// requireAuthorised('core.create', ...) below already does; requiring core.manage on top was
+		// stricter than core and refused a stock Author-shaped user (core.create but not core.manage)
+		// that real Joomla's own backend would let create an article.
 
 		// A content article can never auto-create a category on the fly through this tool (unlike
 		// ArticleModel::save(), which would happily create one named after a nonexistent numeric catid —

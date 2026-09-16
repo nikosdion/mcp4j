@@ -7,6 +7,7 @@ MCP4j 0.0.1
 ! Fixed log injection via unescaped newlines in uncaught-exception log entries
 ! Fixed panopticon_akeebabackup_info checking core.manage on the wrong component asset
 ! Replaced ad hoc URL-scheme parsing with joomla/uri's UriImmutable in the Panopticon core-update tools
+! Loosened content_articles_create's overly strict core.manage requirement to match core's core.create
 + Initial project scaffolding: package, component, and webservices plugin skeletons
 # [LOW] Fixed users_levels_update refusing unrelated edits to access levels that include a Super User group
 + MCP session persistence design: #__mcp4j_sessions schema, SessionManager helper, session_ttl and
