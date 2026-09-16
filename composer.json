@@ -15,7 +15,8 @@
     "ext-json": "*",
     "ext-simplexml": "*",
     "ext-dom": "*",
-    "league/commonmark": "^2.7"
+    "league/commonmark": "^2.7",
+    "joomla/uri": "^3.0"
   },
   "config": {
     "vendor-dir": "component/backend/vendor",

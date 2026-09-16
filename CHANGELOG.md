@@ -6,6 +6,7 @@ MCP4j 0.0.1
 ! Scoped AbstractCategoriesTool::doDeleteCategory()'s permission check to the specific category
 ! Fixed log injection via unescaped newlines in uncaught-exception log entries
 ! Fixed panopticon_akeebabackup_info checking core.manage on the wrong component asset
+! Replaced ad hoc URL-scheme parsing with joomla/uri's UriImmutable in the Panopticon core-update tools
 + Initial project scaffolding: package, component, and webservices plugin skeletons
 # [LOW] Fixed users_levels_update refusing unrelated edits to access levels that include a Super User group
 + MCP session persistence design: #__mcp4j_sessions schema, SessionManager helper, session_ttl and

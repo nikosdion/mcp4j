@@ -9,6 +9,8 @@ namespace Akeeba\Component\Mcp4j\Administrator\Mapper\Panopticon;
 
 defined('_JEXEC') || die;
 
+use Joomla\Uri\UriImmutable;
+
 /**
  * Pure input/output mapping for the Panopticon Connector's core-update tools.
  *
@@ -16,7 +18,10 @@ defined('_JEXEC') || die;
  * `component/api/src/View/Core/JsonapiView.php::displayItem()` (`core.update` mode field list). See
  * `.plans/14-panopticon-core.md`.
  *
- * Pure: no Joomla.
+ * Pure: no Joomla CMS/application bootstrap needed (unit-testable without a running Joomla site) — it
+ * does use `joomla/uri`'s standalone `UriImmutable` (security.md I15: the "One True Joomla Way" for
+ * scheme extraction, in place of ad hoc `parse_url()`/regex checks), a dependency-free Joomla Framework
+ * package, not the CMS.
  *
  * @since  0.0.1
  */
@@ -88,7 +93,7 @@ final class CoreUpdateMapper
 	{
 		$trimmed = trim($source);
 
-		if (preg_match('#^https?://#i', $trimmed) === 1)
+		if (in_array(self::urlScheme($trimmed), ['http', 'https'], true))
 		{
 			return ['custom', $trimmed];
 		}
@@ -163,14 +168,25 @@ final class CoreUpdateMapper
 
 	public static function isHttpUrl(string $url): bool
 	{
-		if (filter_var($url, FILTER_VALIDATE_URL) === false)
+		return in_array(self::urlScheme($url), ['http', 'https'], true);
+	}
+
+	/**
+	 * security.md I15: the shared, single place both `isHttpUrl()` and `parseUpdateSource()` extract a
+	 * URL's scheme from — via `joomla/uri`'s `UriImmutable`, rather than each doing its own ad hoc
+	 * `parse_url()`/regex check. Returns `''` (never matching `http`/`https`) for anything that isn't
+	 * parseable as a URL at all, rather than letting `UriImmutable`'s constructor exception propagate.
+	 */
+	private static function urlScheme(string $url): string
+	{
+		try
 		{
-			return false;
+			return strtolower((string) (new UriImmutable($url))->getScheme());
 		}
-
-		$scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-
-		return in_array($scheme, ['http', 'https'], true);
+		catch (\RuntimeException $e)
+		{
+			return '';
+		}
 	}
 
 	/**
