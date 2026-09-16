@@ -11,13 +11,13 @@ defined('_JEXEC') || die;
 
 /**
  * Narrows a set of discovered tool definitions down to the ones that should actually be exposed by
- * `tools/list`/`tools/call`, applying criteria in a fixed precedence order that mirrors the original
- * `joomla-mcp-php` project's `--categories`/`--tools`/`--non-destructive` command-line options:
+ * `tools/list`/`tools/call`, applying criteria in a fixed order:
  *
  * 1. Requirements ({@see ToolDefinition::$requiredComponents}, `#[ToolRequirements]` Joomla version
  *    bounds) are always enforced, regardless of the other criteria.
- * 2. If an allow-list of exact tool names is given, it wins outright — categories are ignored entirely.
- *    Otherwise, if a set of categories is given, only tools in those categories survive.
+ * 2. The category filter and the tool filter are independent, AND-combined predicates — see
+ *    {@see ToolFilterCriteria} for the include/exclude semantics of each. Both apply; neither overrides
+ *    the other.
  * 3. Read-only filtering, if requested, is applied last, against whatever survived steps 1-2.
  *
  * Pure: no Joomla, only what {@see ToolFilterCriteria} was given.
@@ -34,7 +34,8 @@ final class ToolFilter
 	public static function apply(array $definitions, ToolFilterCriteria $criteria): array
 	{
 		$definitions = self::applyRequirements($definitions, $criteria);
-		$definitions = self::applyNameOrCategory($definitions, $criteria);
+		$definitions = self::applyCategory($definitions, $criteria);
+		$definitions = self::applyTool($definitions, $criteria);
 		$definitions = self::applyReadOnly($definitions, $criteria);
 
 		return $definitions;
@@ -75,26 +76,49 @@ final class ToolFilter
 	 *
 	 * @return  array<string, ToolDefinition>
 	 */
-	private static function applyNameOrCategory(array $definitions, ToolFilterCriteria $criteria): array
+	private static function applyCategory(array $definitions, ToolFilterCriteria $criteria): array
 	{
-		if ($criteria->allowlist !== [])
+		if ($criteria->categories === [])
 		{
-			$allowed = array_flip($criteria->allowlist);
-
-			return array_filter($definitions, static fn (ToolDefinition $d): bool => isset($allowed[$d->name]));
+			return $definitions;
 		}
 
-		if ($criteria->enabledCategories !== [])
-		{
-			$allowedCategories = array_map('strtolower', $criteria->enabledCategories);
+		$listed  = array_map('strtolower', $criteria->categories);
+		$include = $criteria->categoryMode === ToolFilterCriteria::MODE_INCLUDE;
 
-			return array_filter(
-				$definitions,
-				static fn (ToolDefinition $d): bool => in_array(strtolower($d->category), $allowedCategories, true)
-			);
+		return array_filter(
+			$definitions,
+			static function (ToolDefinition $d) use ($listed, $include): bool {
+				$isListed = in_array(strtolower($d->category), $listed, true);
+
+				return $isListed === $include;
+			}
+		);
+	}
+
+	/**
+	 * @param   array<string, ToolDefinition>  $definitions
+	 *
+	 * @return  array<string, ToolDefinition>
+	 */
+	private static function applyTool(array $definitions, ToolFilterCriteria $criteria): array
+	{
+		if ($criteria->tools === [])
+		{
+			return $definitions;
 		}
 
-		return $definitions;
+		$listed  = array_flip($criteria->tools);
+		$include = $criteria->toolMode === ToolFilterCriteria::MODE_INCLUDE;
+
+		return array_filter(
+			$definitions,
+			static function (ToolDefinition $d) use ($listed, $include): bool {
+				$isListed = isset($listed[$d->name]);
+
+				return $isListed === $include;
+			}
+		);
 	}
 
 	/**

@@ -71,7 +71,7 @@ comparison against the original `joomla-mcp-php` project.
    how to grant it to a non-Super-User group), and **Users → Options → Enable Token Based Authentication** must be
    ticked. Generate the token on the user's Edit Profile page.
 2. Configure your MCP client with:
-   - URL: `https://your-site.example/api/index.php?/v1/mcp4j/server`
+   - URL: `https://your-site.example/api/index.php/v1/mcp4j/server`
    - Header: `Authorization: Bearer <the Joomla API token>`
 3. Nothing else to configure client-side — the client discovers every enabled tool via the standard MCP
    `initialize` → `tools/list` handshake. `Mcp-Session-Id` is handled automatically by any spec-compliant client.
@@ -91,13 +91,14 @@ its own low-privilege test user this way.
 
 ## Options (Options → Tools)
 
-- **Tool Categories** — tick the categories to expose. Leave every box unticked to expose all of them (the
-  default). Ignored entirely when Tool Allow-List (below) is not empty.
-- **Tool Allow-List** — one exact tool name per line. When not empty, completely overrides the category
-  selection: only the tools named here (that also meet their own requirements, e.g. a third-party component
-  being installed) are exposed.
+- **Category Mode** / **Categories** — **Include**: only the categories selected in Categories are exposed.
+  **Exclude** (the default): every category is exposed except the ones selected. With nothing selected (the
+  default), the mode has no effect and every category is exposed.
+- **Tool Mode** / **Tools** — the same Include/Exclude choice as Category Mode, but for exact tool names
+  instead of whole categories. Applied independently of, and in addition to, the category filter — a tool
+  must pass both to be exposed.
 - **Read-Only Mode** — when enabled, only tools annotated `readOnlyHint: true` are exposed. Applied last, after
-  the category/allow-list filters, so it only ever narrows what they already selected.
+  the category/tool filters, so it only ever narrows what they already selected.
 - **Minimal Tool Schemas** — when enabled, every advertised tool's input schema is reduced to each parameter's
   type and default only, dropping descriptions/enums/constraints. Meaningfully shrinks the `tools/list` response
   for LLM clients with a limited context window, at the cost of fewer hints about how to call each tool

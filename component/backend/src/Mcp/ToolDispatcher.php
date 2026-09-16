@@ -39,8 +39,6 @@ use Joomla\CMS\Log\Log;
  */
 final class ToolDispatcher
 {
-	private const DEFAULT_NAMESPACE_PREFIX = 'Akeeba\\Component\\Mcp4j\\Administrator\\Tool';
-
 	/** @var array<string, ToolDefinition>|null */
 	private ?array $filtered = null;
 
@@ -213,11 +211,13 @@ final class ToolDispatcher
 
 		$toolDirectory = $this->toolDirectory ?? (JPATH_ADMINISTRATOR . '/components/com_mcp4j/src/Tool');
 
-		$definitions = ToolRegistry::discover($toolDirectory, self::DEFAULT_NAMESPACE_PREFIX);
+		$definitions = ToolRegistry::discover($toolDirectory, ToolRegistry::DEFAULT_NAMESPACE_PREFIX);
 
 		$criteria = new ToolFilterCriteria(
-			enabledCategories: $this->categoriesFromParams(),
-			allowlist: $this->allowlistFromParams(),
+			categoryMode: $this->modeFromParams('category_mode'),
+			categories: $this->listFromParams('categories'),
+			toolMode: $this->modeFromParams('tool_mode'),
+			tools: $this->listFromParams('tools'),
 			readOnlyOnly: (bool) $this->context->params->get('read_only', 0),
 			joomlaVersion: JVERSION,
 			isComponentEnabled: static function (string $option): bool {
@@ -238,11 +238,16 @@ final class ToolDispatcher
 	}
 
 	/**
+	 * Reads a multiselect Options-page field (`categories`/`tools`) into a plain list of non-empty
+	 * strings. Joomla stores a saved multiselect as a JSON array, but `Registry::get()` can also hand back
+	 * a `stdClass` (an empty/associative array decoded from `{}`) or a single string (a field that was
+	 * saved with exactly one value on some Joomla versions) — all three shapes are normalised here.
+	 *
 	 * @return  list<string>
 	 */
-	private function categoriesFromParams(): array
+	private function listFromParams(string $key): array
 	{
-		$raw = $this->context->params->get('tool_categories', []);
+		$raw = $this->context->params->get($key, []);
 
 		if (is_object($raw))
 		{
@@ -259,40 +264,26 @@ final class ToolDispatcher
 			return [];
 		}
 
-		$categories = [];
+		$values = [];
 
 		foreach ($raw as $value)
 		{
 			if (is_string($value) && $value !== '')
 			{
-				$categories[] = $value;
+				$values[] = $value;
 			}
 		}
 
-		return array_values(array_unique($categories));
+		return array_values(array_unique($values));
 	}
 
-	/**
-	 * @return  list<string>
-	 */
-	private function allowlistFromParams(): array
+	private function modeFromParams(string $key): string
 	{
-		$raw   = (string) $this->context->params->get('tool_allowlist', '');
-		$lines = preg_split('/\R/', $raw) ?: [];
+		$raw = (string) $this->context->params->get($key, ToolFilterCriteria::MODE_EXCLUDE);
 
-		$names = [];
-
-		foreach ($lines as $line)
-		{
-			$trimmed = trim($line);
-
-			if ($trimmed !== '')
-			{
-				$names[] = $trimmed;
-			}
-		}
-
-		return array_values(array_unique($names));
+		return $raw === ToolFilterCriteria::MODE_INCLUDE
+			? ToolFilterCriteria::MODE_INCLUDE
+			: ToolFilterCriteria::MODE_EXCLUDE;
 	}
 
 	private function isDebugLogEnabled(): bool

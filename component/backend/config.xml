@@ -37,20 +37,43 @@
             addfieldprefix="Akeeba\Component\Mcp4j\Administrator\Field"
     >
         <field
-                name="tool_categories"
+                name="category_mode"
+                type="radio"
+                label="COM_MCP4J_CONFIG_CATEGORY_MODE_LABEL"
+                description="COM_MCP4J_CONFIG_CATEGORY_MODE_DESC"
+                default="exclude"
+        >
+            <option value="include">COM_MCP4J_CONFIG_MODE_INCLUDE</option>
+            <option value="exclude">COM_MCP4J_CONFIG_MODE_EXCLUDE</option>
+        </field>
+
+        <field
+                name="categories"
                 type="ToolCategories"
                 multiple="true"
-                label="COM_MCP4J_CONFIG_TOOL_CATEGORIES_LABEL"
-                description="COM_MCP4J_CONFIG_TOOL_CATEGORIES_DESC"
+                layout="joomla.form.field.list-fancy-select"
+                label="COM_MCP4J_CONFIG_CATEGORIES_LABEL"
+                description="COM_MCP4J_CONFIG_CATEGORIES_DESC"
         />
 
         <field
-                name="tool_allowlist"
-                type="textarea"
-                filter="raw"
-                rows="5"
-                label="COM_MCP4J_CONFIG_TOOL_ALLOWLIST_LABEL"
-                description="COM_MCP4J_CONFIG_TOOL_ALLOWLIST_DESC"
+                name="tool_mode"
+                type="radio"
+                label="COM_MCP4J_CONFIG_TOOL_MODE_LABEL"
+                description="COM_MCP4J_CONFIG_TOOL_MODE_DESC"
+                default="exclude"
+        >
+            <option value="include">COM_MCP4J_CONFIG_MODE_INCLUDE</option>
+            <option value="exclude">COM_MCP4J_CONFIG_MODE_EXCLUDE</option>
+        </field>
+
+        <field
+                name="tools"
+                type="ToolNames"
+                multiple="true"
+                layout="joomla.form.field.groupedlist-fancy-select"
+                label="COM_MCP4J_CONFIG_TOOLS_LABEL"
+                description="COM_MCP4J_CONFIG_TOOLS_DESC"
         />
 
         <field

@@ -12,8 +12,8 @@ defined('_JEXEC') || die;
 /**
  * Builds the `initialize` result's `instructions` string: a header explaining how MCP4j's tools relate
  * to the connecting Joomla user's own permissions, followed by one line per tool category that is
- * actually exposed (after `#[ToolRequirements]` and the `tool_categories`/`tool_allowlist` component
- * options have been applied), so an LLM with a large tool count can decide which categories are worth
+ * actually exposed (after `#[ToolRequirements]` and the `category_mode`/`categories`/`tool_mode`/`tools`
+ * component options have been applied), so an LLM with a large tool count can decide which categories are worth
  * searching without having to look at every tool.
  *
  * The per-category lines are copied verbatim from the original `joomla-mcp-php` project's

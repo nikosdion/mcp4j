@@ -11,9 +11,9 @@ use Akeeba\Mcp4j\Tests\Integration\AbstractToolTestCase;
 use Akeeba\Mcp4j\Tests\Integration\Support\DatabaseSideChannel;
 
 /**
- * End-to-end proof that plan 01's component Options (`read_only`, `tool_categories`, `tool_allowlist`,
- * `minimal_schema`, `forbidden_secrets`) actually filter the tool surface — driven through
- * `config_component_update` on `com_mcp4j`, i.e. through the product itself, per
+ * End-to-end proof that the component Options (`read_only`, `category_mode`/`categories`,
+ * `tool_mode`/`tools`, `minimal_schema`, `forbidden_secrets`) actually filter the tool surface — driven
+ * through `config_component_update` on `com_mcp4j`, i.e. through the product itself, per
  * `.plans/10-config-plugins-installer-languages.md`.
  *
  * Joomla's `_system` cache is off on the Docker test site, so a change made through
@@ -60,11 +60,11 @@ class ComponentOptionsTest extends AbstractToolTestCase
 		$this->callToolRpcError('tags_create', ['title' => 'Should never be created'], -32602);
 	}
 
-	public function testToolCategoriesRestrictsToTheGivenCategories(): void
+	public function testCategoryIncludeModeRestrictsToTheGivenCategories(): void
 	{
 		$this->callToolOk('config_component_update', [
 			'componentName' => 'com_mcp4j',
-			'configData'    => ['tool_categories' => ['Tags']],
+			'configData'    => ['category_mode' => 'include', 'categories' => ['Tags']],
 		]);
 
 		$names = $this->freshToolNames();
@@ -76,13 +76,32 @@ class ComponentOptionsTest extends AbstractToolTestCase
 		}
 	}
 
-	public function testAllowlistBeatsCategoriesAndMcpSideRestoreWorks(): void
+	public function testCategoryExcludeModeRemovesTheGivenCategories(): void
+	{
+		$this->callToolOk('config_component_update', [
+			'componentName' => 'com_mcp4j',
+			'configData'    => ['category_mode' => 'exclude', 'categories' => ['Tags']],
+		]);
+
+		$names = $this->freshToolNames();
+		$this->assertNotSame([], $names);
+		$this->assertContains('config_component_update', $names, 'A non-Tags tool must still be exposed.');
+
+		foreach ($names as $name)
+		{
+			$this->assertFalse(str_starts_with($name, 'tags_'), "Expected no exposed tool to start with \"tags_\", found \"$name\".");
+		}
+	}
+
+	public function testToolFilterCombinesWithCategoryFilterAndMcpSideRestoreWorks(): void
 	{
 		$this->callToolOk('config_component_update', [
 			'componentName' => 'com_mcp4j',
 			'configData'    => [
-				'tool_categories' => ['Config'],
-				'tool_allowlist'  => "tags_list\nconfig_component_update",
+				'category_mode' => 'include',
+				'categories'    => ['Config', 'Tags'],
+				'tool_mode'     => 'include',
+				'tools'         => ['tags_list', 'config_component_update'],
 			],
 		]);
 
@@ -90,11 +109,11 @@ class ComponentOptionsTest extends AbstractToolTestCase
 		sort($names);
 		$this->assertSame(['config_component_update', 'tags_list'], $names);
 
-		// Unlike read_only, config_component_update itself is explicitly allow-listed here, so restoring
+		// Unlike read_only, config_component_update itself is explicitly included here, so restoring
 		// through MCP itself is possible — and this is the scenario meant to prove exactly that.
 		$this->callToolOk('config_component_update', [
 			'componentName' => 'com_mcp4j',
-			'configData'    => ['tool_categories' => [], 'tool_allowlist' => ''],
+			'configData'    => ['category_mode' => 'exclude', 'categories' => [], 'tool_mode' => 'exclude', 'tools' => []],
 		]);
 
 		$restored = $this->freshToolNames();

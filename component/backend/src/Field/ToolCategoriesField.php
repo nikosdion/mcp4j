@@ -9,14 +9,16 @@ namespace Akeeba\Component\Mcp4j\Administrator\Field;
 
 defined('_JEXEC') || die;
 
-use Joomla\CMS\Form\Field\CheckboxesField;
+use Joomla\CMS\Form\Field\ListField;
 
 /**
- * Renders one checkbox per `Tool/<Category>` folder currently present under
- * `administrator/components/com_mcp4j/src/Tool`, for the `tool_categories` option on the component's
- * Options page (see `component/backend/config.xml`). The category list is not hand-maintained anywhere —
- * it is always exactly {@see \Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ToolRegistry}'s own
- * definition of "category" (a folder name), read straight off disk.
+ * Renders one option per `Tool/<Category>` folder currently present under
+ * `administrator/components/com_mcp4j/src/Tool`, as a Choices.js fancy multiselect (see the `categories`
+ * field's `layout="joomla.form.field.list-fancy-select"` in `component/backend/config.xml`), for the
+ * `categories` option on the component's Options page. The category list is not hand-maintained
+ * anywhere — it is always exactly
+ * {@see \Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ToolRegistry}'s own definition of "category"
+ * (a folder name), read straight off disk.
  *
  * Requires `addfieldprefix="Akeeba\Component\Mcp4j\Administrator\Field"` on the field's nearest ancestor
  * `<fieldset>`/`<fields>`/`<form>`/`<config>` element — see `~/.claude/CLAUDE.md` ("custom XML form field
@@ -24,7 +26,7 @@ use Joomla\CMS\Form\Field\CheckboxesField;
  *
  * @since  0.0.1
  */
-class ToolCategoriesField extends CheckboxesField
+class ToolCategoriesField extends ListField
 {
 	/**
 	 * @var  string

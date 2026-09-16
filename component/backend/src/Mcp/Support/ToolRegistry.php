@@ -26,6 +26,13 @@ use Akeeba\Component\Mcp4j\Administrator\Mcp\Attribute\ToolRequirements;
  */
 final class ToolRegistry
 {
+	/**
+	 * The namespace every `Tool/<Category>/<Class>.php` file lives under, one segment (the category name)
+	 * short of the class itself — shared with the `Field/ToolCategoriesField`/`Field/ToolNamesField`
+	 * Options-page fields so they discover exactly the same tool set `ToolDispatcher` filters against.
+	 */
+	public const DEFAULT_NAMESPACE_PREFIX = 'Akeeba\\Component\\Mcp4j\\Administrator\\Tool';
+
 	private const TOOL_NAME_PATTERN = '/^[a-z0-9_]{1,64}$/';
 
 	/**

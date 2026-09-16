@@ -37,15 +37,19 @@ class ToolFilterTest extends TestCase
 	}
 
 	private function criteria(
-		array $enabledCategories = [],
-		array $allowlist = [],
+		string $categoryMode = ToolFilterCriteria::MODE_EXCLUDE,
+		array $categories = [],
+		string $toolMode = ToolFilterCriteria::MODE_EXCLUDE,
+		array $tools = [],
 		bool $readOnlyOnly = false,
 		string $joomlaVersion = '5.4.0',
 		?\Closure $isComponentEnabled = null
 	): ToolFilterCriteria {
 		return new ToolFilterCriteria(
-			enabledCategories: $enabledCategories,
-			allowlist: $allowlist,
+			categoryMode: $categoryMode,
+			categories: $categories,
+			toolMode: $toolMode,
+			tools: $tools,
 			readOnlyOnly: $readOnlyOnly,
 			joomlaVersion: $joomlaVersion,
 			isComponentEnabled: $isComponentEnabled ?? static fn (string $option): bool => true,
@@ -110,52 +114,115 @@ class ToolFilterTest extends TestCase
 	}
 
 	// -----------------------------------------------------------------------------------------------------------
-	// Categories / allow-list
+	// Category mode / categories
 	// -----------------------------------------------------------------------------------------------------------
 
-	public function testCategoryFilterIsCaseInsensitive(): void
-	{
-		$definitions = ['t' => $this->tool('t', 'Content')];
-
-		$result = ToolFilter::apply($definitions, $this->criteria(enabledCategories: ['content']));
-
-		$this->assertArrayHasKey('t', $result);
-	}
-
-	public function testCategoryFilterExcludesOtherCategories(): void
+	public function testEmptyCategoriesKeepsEverythingRegardlessOfMode(): void
 	{
 		$definitions = [
 			'a' => $this->tool('a', 'Content'),
 			'b' => $this->tool('b', 'Users'),
 		];
 
-		$result = ToolFilter::apply($definitions, $this->criteria(enabledCategories: ['Content']));
+		$this->assertSame(['a', 'b'], array_keys(ToolFilter::apply($definitions, $this->criteria(categoryMode: ToolFilterCriteria::MODE_INCLUDE))));
+		$this->assertSame(['a', 'b'], array_keys(ToolFilter::apply($definitions, $this->criteria(categoryMode: ToolFilterCriteria::MODE_EXCLUDE))));
+	}
+
+	public function testCategoryIncludeModeKeepsOnlyListedCategoriesCaseInsensitively(): void
+	{
+		$definitions = [
+			'a' => $this->tool('a', 'Content'),
+			'b' => $this->tool('b', 'Users'),
+		];
+
+		$result = ToolFilter::apply(
+			$definitions,
+			$this->criteria(categoryMode: ToolFilterCriteria::MODE_INCLUDE, categories: ['content'])
+		);
 
 		$this->assertSame(['a'], array_keys($result));
 	}
 
-	public function testEmptyCategoriesKeepsEverything(): void
+	public function testCategoryExcludeModeRemovesOnlyListedCategories(): void
 	{
 		$definitions = [
 			'a' => $this->tool('a', 'Content'),
 			'b' => $this->tool('b', 'Users'),
 		];
 
-		$result = ToolFilter::apply($definitions, $this->criteria());
+		$result = ToolFilter::apply(
+			$definitions,
+			$this->criteria(categoryMode: ToolFilterCriteria::MODE_EXCLUDE, categories: ['Content'])
+		);
 
-		$this->assertSame(['a', 'b'], array_keys($result));
+		$this->assertSame(['b'], array_keys($result));
 	}
 
-	public function testAllowlistOverridesCategories(): void
+	// -----------------------------------------------------------------------------------------------------------
+	// Tool mode / tools
+	// -----------------------------------------------------------------------------------------------------------
+
+	public function testEmptyToolsKeepsEverythingRegardlessOfMode(): void
 	{
 		$definitions = [
 			'a' => $this->tool('a', 'Content'),
 			'b' => $this->tool('b', 'Users'),
 		];
 
-		$result = ToolFilter::apply($definitions, $this->criteria(enabledCategories: ['Users'], allowlist: ['a']));
+		$this->assertSame(['a', 'b'], array_keys(ToolFilter::apply($definitions, $this->criteria(toolMode: ToolFilterCriteria::MODE_INCLUDE))));
+		$this->assertSame(['a', 'b'], array_keys(ToolFilter::apply($definitions, $this->criteria(toolMode: ToolFilterCriteria::MODE_EXCLUDE))));
+	}
+
+	public function testToolIncludeModeKeepsOnlyListedTools(): void
+	{
+		$definitions = [
+			'a' => $this->tool('a', 'Content'),
+			'b' => $this->tool('b', 'Users'),
+		];
+
+		$result = ToolFilter::apply(
+			$definitions,
+			$this->criteria(toolMode: ToolFilterCriteria::MODE_INCLUDE, tools: ['a'])
+		);
 
 		$this->assertSame(['a'], array_keys($result));
+	}
+
+	public function testToolExcludeModeRemovesOnlyListedTools(): void
+	{
+		$definitions = [
+			'a' => $this->tool('a', 'Content'),
+			'b' => $this->tool('b', 'Users'),
+		];
+
+		$result = ToolFilter::apply(
+			$definitions,
+			$this->criteria(toolMode: ToolFilterCriteria::MODE_EXCLUDE, tools: ['a'])
+		);
+
+		$this->assertSame(['b'], array_keys($result));
+	}
+
+	public function testCategoryAndToolFiltersCombineWithAnd(): void
+	{
+		$definitions = [
+			'a' => $this->tool('a', 'Content'),
+			'b' => $this->tool('b', 'Content'),
+			'c' => $this->tool('c', 'Users'),
+		];
+
+		// Include only the "Content" category, then additionally exclude tool "a" from it.
+		$result = ToolFilter::apply(
+			$definitions,
+			$this->criteria(
+				categoryMode: ToolFilterCriteria::MODE_INCLUDE,
+				categories: ['Content'],
+				toolMode: ToolFilterCriteria::MODE_EXCLUDE,
+				tools: ['a'],
+			)
+		);
+
+		$this->assertSame(['b'], array_keys($result));
 	}
 
 	// -----------------------------------------------------------------------------------------------------------
@@ -174,15 +241,18 @@ class ToolFilterTest extends TestCase
 		$this->assertSame(['r'], array_keys($result));
 	}
 
-	public function testReadOnlyAppliedAfterAllowlist(): void
+	public function testReadOnlyAppliedAfterToolFilter(): void
 	{
 		$definitions = [
 			'r' => $this->tool('r', 'Content', readOnly: true),
 			'w' => $this->tool('w', 'Content', readOnly: false),
 		];
 
-		// The write tool is explicitly allow-listed, but read-only filtering, applied last, still removes it.
-		$result = ToolFilter::apply($definitions, $this->criteria(allowlist: ['r', 'w'], readOnlyOnly: true));
+		// Both tools are explicitly included, but read-only filtering, applied last, still removes 'w'.
+		$result = ToolFilter::apply(
+			$definitions,
+			$this->criteria(toolMode: ToolFilterCriteria::MODE_INCLUDE, tools: ['r', 'w'], readOnlyOnly: true)
+		);
 
 		$this->assertSame(['r'], array_keys($result));
 	}
