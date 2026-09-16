@@ -42,12 +42,22 @@ class AkeebaBackup extends AbstractPanopticonTool
 	public function info(): array
 	{
 		$this->requireSuperUser();
-		$this->requireAuthorised('core.manage', 'com_installer');
 
 		$hasAkeebaBackup = $this->isEnabledSafely('com_akeebabackup');
 		$hasAkeeba       = $this->isEnabledSafely('com_akeeba');
 
 		$component = AkeebaBackupInfoMapper::componentElement($hasAkeebaBackup, $hasAkeeba);
+
+		// security.md I13: check the actual detected Akeeba Backup component asset (whichever of the two
+		// possible elements is installed), not the unrelated com_installer asset — moot in practice since
+		// requireSuperUser() above already passes any authorise() check regardless of asset name, but
+		// this keeps the secondary check meaningful/consistent with the rest of this tool category. When
+		// neither component is installed there's no real asset to check against, so this is skipped for
+		// that branch — the "not installed" response below carries no data worth gating.
+		if ($component !== null)
+		{
+			$this->requireAuthorised('core.manage', $component);
+		}
 
 		if ($component === null)
 		{
