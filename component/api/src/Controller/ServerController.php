@@ -67,8 +67,15 @@ class ServerController extends ApiController
 			// client-facing message without logging anywhere would leave no way to diagnose anything),
 			// but only echo it back to the client when the site owner has explicitly turned on
 			// Joomla's own Debug System.
+			// security.md L5: strip newlines the same way ToolDispatcher's equivalent catch does, to
+			// avoid a raw exception message forging additional, fake-looking log lines.
 			Log::add(
-				sprintf('Internal server error: %s in %s:%d', $e->getMessage(), $e->getFile(), $e->getLine()),
+				sprintf(
+					'Internal server error: %s in %s:%d',
+					str_replace(["\r", "\n"], ' ', $e->getMessage()),
+					$e->getFile(),
+					$e->getLine()
+				),
 				Log::ERROR,
 				'mcp4j'
 			);

@@ -152,11 +152,15 @@ final class ToolDispatcher
 		}
 		catch (\Throwable $e)
 		{
+			// security.md L5: unlike the debug_log branch above (which JSON-encodes, escaping newlines),
+			// $e->getMessage() is interpolated into this log line raw. An exception message can embed
+			// attacker-influenced newlines (e.g. a DB error echoing back a multi-line submitted value),
+			// which could otherwise forge additional, fake-looking log lines in administrator/logs/mcp4j.php.
 			Log::add(
 				sprintf(
 					'Internal error while running tool "%s": %s in %s:%d',
 					$name,
-					$e->getMessage(),
+					str_replace(["\r", "\n"], ' ', $e->getMessage()),
 					$e->getFile(),
 					$e->getLine()
 				),

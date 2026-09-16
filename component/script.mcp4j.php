@@ -136,6 +136,11 @@ class Pkg_Mcp4jInstallerScript extends InstallerScript
 
 		foreach ($foldersByElement as $folder => $element)
 		{
+			// security.md I4: $folder/$element are bound directly from the loop variable, which is
+			// only safe because this query is built AND executed within the same iteration, before the
+			// next iteration reassigns them (see CLAUDE.md's bind()-in-a-loop-aliases-the-same-variable
+			// pitfall). If this loop is ever refactored to batch or defer execution (e.g. collecting
+			// queries to run after the loop), switch to a per-key bind-variable array first.
 			$query = $db->getQuery(true)
 				->update($db->quoteName('#__extensions'))
 				->set($db->quoteName('enabled') . ' = 1')
