@@ -13,6 +13,7 @@ use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\InvalidToolArgumentsExcep
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\ToolException;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\UnknownToolException;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ArgumentCoercer;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ErrorDisclosure;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\SecretLeakGuard;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ToolDefinition;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ToolFilter;
@@ -163,7 +164,9 @@ final class ToolDispatcher
 				'mcp4j'
 			);
 
-			return ToolResult::error(sprintf('Internal error while running %s: %s', $name, $e->getMessage()));
+			$message = ErrorDisclosure::toolErrorMessage(defined('JDEBUG') && JDEBUG, $name, $e->getMessage());
+
+			return ToolResult::error($message);
 		}
 
 		return ToolResult::success($result);

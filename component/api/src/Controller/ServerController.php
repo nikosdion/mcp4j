@@ -12,6 +12,7 @@ defined('_JEXEC') || die;
 use Akeeba\Component\Mcp4j\Administrator\Helper\SessionManager;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\InvalidToolArgumentsException;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Exception\UnknownToolException;
+use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ErrorDisclosure;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\SecretLeakGuard;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\Support\ServerInstructions;
 use Akeeba\Component\Mcp4j\Administrator\Mcp\ToolContext;
@@ -21,6 +22,7 @@ use Akeeba\Component\Mcp4j\Administrator\Support\JsonRpcRequestException;
 use Akeeba\Component\Mcp4j\Api\Exception\JsonRpcException;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
+use Joomla\CMS\Log\Log;
 use Joomla\CMS\MVC\Controller\ApiController;
 use Joomla\Database\DatabaseInterface;
 
@@ -58,7 +60,22 @@ class ServerController extends ApiController
 		}
 		catch (\Throwable $e)
 		{
-			$this->respondError(null, $e->getCode() ?: -32603, $e->getMessage(), 500);
+			// security.md M5: this is the outermost catch-all for the whole request — an uncaught
+			// \Throwable here can be anything Joomla core itself throws (a PHP TypeError, a DB driver
+			// exception embedding SQL/schema detail, ...). Log the full detail unconditionally (this
+			// site previously didn't, unlike ToolDispatcher's equivalent catch — sanitising the
+			// client-facing message without logging anywhere would leave no way to diagnose anything),
+			// but only echo it back to the client when the site owner has explicitly turned on
+			// Joomla's own Debug System.
+			Log::add(
+				sprintf('Internal server error: %s in %s:%d', $e->getMessage(), $e->getFile(), $e->getLine()),
+				Log::ERROR,
+				'mcp4j'
+			);
+
+			$message = ErrorDisclosure::serverErrorMessage(defined('JDEBUG') && JDEBUG, $e->getMessage());
+
+			$this->respondError(null, $e->getCode() ?: -32603, $message, 500);
 		}
 
 		return '';
