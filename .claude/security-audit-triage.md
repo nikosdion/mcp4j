@@ -50,6 +50,15 @@ under `tests/integration/docker/www/`), don't just trust a docblock or comment c
 sub-audits in the initial full pass over-flagged findings in this class as High before this verification
 step was applied — always do the verification, every time.
 
+### A URL/redirect-target field is stored with no validation, matching a core Joomla component's own behavior
+
+If the *real* Joomla core component this tool mirrors already stores the equivalent field with no
+validation of its own (e.g. `com_redirect`'s `new_url` on `redirects_create`/`update`, later used verbatim
+by `plg_system_redirect` to issue real 30x redirects), reproducing that is not a port-introduced weakness
+— it's the component's intended purpose (SEO/link management here) and matches the stock backend UI's own
+(lack of) validation, gated by the same ACL the real controller enforces. Don't re-flag this shape without
+first confirming the real core component/controller does something stricter.
+
 ### Ticket `com_fields` values merged without per-field access filtering
 
 Not an issue, for two independent, compounding reasons: (1) the whole tool is already gated behind
