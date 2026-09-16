@@ -173,19 +173,25 @@ class Levels extends AbstractTool
 
 		$current = LevelMapper::normaliseItem($this->loadItem($model, $id, 'viewing access level'));
 
-		$currentGrantsSuperUser = false;
+		// security.md L2: only the ADDED groups matter here (see LevelMapper::addedGroups()'s docblock)
+		// — gating on "the current rules merely already include a Super-User group" blocked unrelated
+		// edits (e.g. a title rename) to a level a legitimately-privileged com_users admin should be
+		// able to touch.
+		$addedGroups = LevelMapper::addedGroups($current['rules'] ?? [], $rules);
 
-		foreach ($current['rules'] ?? [] as $groupId)
+		$addsNewSuperUserGroup = false;
+
+		foreach ($addedGroups as $groupId)
 		{
 			if (Access::checkGroup((int) $groupId, 'core.admin') === true)
 			{
-				$currentGrantsSuperUser = true;
+				$addsNewSuperUserGroup = true;
 
 				break;
 			}
 		}
 
-		if ($currentGrantsSuperUser && !$this->isAuthorised('core.admin', 'root.1'))
+		if ($addsNewSuperUserGroup && !$this->isAuthorised('core.admin', 'root.1'))
 		{
 			throw new ToolException('Permission denied: core.admin on root.1');
 		}

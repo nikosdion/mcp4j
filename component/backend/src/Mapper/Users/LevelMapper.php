@@ -87,6 +87,29 @@ final class LevelMapper
 	}
 
 	/**
+	 * security.md L2: which group IDs `users_levels_update` would newly add to a level's `rules` if
+	 * `$proposedRules` were applied — the only set the caller-holds-`root.1` check needs to inspect, since
+	 * Joomla's own `LevelModel::validate()` already force-preserves any Super-User-granting group already
+	 * present regardless of what's submitted (a removal attempt is nullified at the model layer, not
+	 * something this tool's pre-check needs to guard against). `$proposedRules === null` means the caller
+	 * isn't touching `rules` at all, so nothing is added.
+	 *
+	 * @param   list<int>       $currentRules
+	 * @param   list<int>|null  $proposedRules
+	 *
+	 * @return  list<int>
+	 */
+	public static function addedGroups(array $currentRules, ?array $proposedRules): array
+	{
+		if ($proposedRules === null)
+		{
+			return [];
+		}
+
+		return array_values(array_diff(self::uniqueIntList($proposedRules), self::uniqueIntList($currentRules)));
+	}
+
+	/**
 	 * `LevelModel::getItem()` already `json_decode()`s `rules` into a plain array; a list tool's items go
 	 * through {@see \Akeeba\Component\Mcp4j\Administrator\Bridge\Support\OutputShaper}'s `JSON_FIELDS`
 	 * decoding instead (raw `a.*` select). Either way, `rules` always ends up a clean, deduplicated,

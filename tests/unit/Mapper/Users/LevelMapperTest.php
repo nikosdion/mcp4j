@@ -135,6 +135,44 @@ class LevelMapperTest extends TestCase
 	}
 
 	// -----------------------------------------------------------------------------------------------------
+	// security.md L2: addedGroups()
+	// -----------------------------------------------------------------------------------------------------
+
+	public function testAddedGroupsIsEmptyWhenProposedRulesIsNull(): void
+	{
+		// $rules === null means the caller isn't touching `rules` at all (e.g. a title-only update) —
+		// nothing is "added", regardless of what the current rules already contain.
+		$this->assertSame([], LevelMapper::addedGroups([2, 8], null));
+	}
+
+	public function testAddedGroupsIsEmptyWhenProposedRulesIsUnchanged(): void
+	{
+		$this->assertSame([], LevelMapper::addedGroups([2, 8], [2, 8]));
+	}
+
+	public function testAddedGroupsIsEmptyWhenAGroupIsOnlyRemoved(): void
+	{
+		$this->assertSame([], LevelMapper::addedGroups([2, 8], [2]));
+	}
+
+	public function testAddedGroupsReturnsOnlyTheNewGroupIds(): void
+	{
+		$this->assertSame([9], LevelMapper::addedGroups([2, 8], [2, 8, 9]));
+	}
+
+	public function testAddedGroupsHandlesASimultaneousAddAndRemove(): void
+	{
+		// Removing 8 while adding 9: only 9 is "added" — matches Joomla's own LevelModel::validate(),
+		// which force-preserves 8 regardless (see the method's docblock), so the removal side is moot.
+		$this->assertSame([9], LevelMapper::addedGroups([2, 8], [2, 9]));
+	}
+
+	public function testAddedGroupsTreatsEveryRuleAsAddedWhenThereWereNoCurrentRules(): void
+	{
+		$this->assertSame([2], LevelMapper::addedGroups([], [2]));
+	}
+
+	// -----------------------------------------------------------------------------------------------------
 	// Field whitelist
 	// -----------------------------------------------------------------------------------------------------
 

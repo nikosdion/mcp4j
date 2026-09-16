@@ -227,7 +227,12 @@ abstract class AbstractCategoriesTool extends AbstractTool
 		$this->requireAuthorised('core.manage', $ext);
 
 		$current = $this->loadOwn($this->categoryModel(), $id);
-		$this->requireAuthorised('core.delete', $ext);
+
+		// security.md L3: scoped to the specific category asset, matching doTrashCategory()/
+		// doUpdateCategory() above — not currently exploitable either way, since CategoryModel::canDelete()
+		// independently re-checks the same per-category asset, but this keeps the tool's own pre-check
+		// consistent with its siblings instead of relying solely on the model layer.
+		$this->requireAuthorised('core.delete', "$ext.category.$id");
 
 		if ((int) ($current['published'] ?? 0) !== -2)
 		{
