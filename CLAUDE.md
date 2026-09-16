@@ -86,6 +86,13 @@ See `README.md` for the user-facing feature list, connection instructions, secur
 "Differences from joomla-mcp-php" section. See `.claude/mcp-session-handling.md` for MCP session-vs-
 Joomla-session handling specifically.
 
+## Security audits
+
+Before any security audit, security review, or `audit-*` skill run — and before reporting any
+finding from one — you MUST read `.claude/security-audit-triage.md` — the actors that are out
+of scope, finding classes already ruled invalid, controls already in place, and how to
+classify hardening versus vulnerabilities.
+
 ## Conventions
 
 This is a Joomla extension, so the global Joomla conventions in
