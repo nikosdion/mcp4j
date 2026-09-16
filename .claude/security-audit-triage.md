@@ -65,7 +65,60 @@ Not an issue, for two independent, compounding reasons: (1) the whole tool is al
 `requireAtsManager()`; (2) see "Actors out of scope" above — this project doesn't expose ticket editing
 to non-manager owners, and has no plans to. Re-evaluate only if that scope decision ever changes.
 
+### A secondary/coarse ACL check in this project's own code is redundant because a deeper layer already enforces the correct one
+
+Distinct from the "matches core" patterns above: sometimes a tool's own secondary permission check uses a
+coarser or slightly wrong asset (e.g. `Panopticon/AdminTools.php`'s several methods skipping the class's
+usual secondary `core.manage` check, `Users/Groups.php`'s escalation guard evaluating current rather than
+prospective admin status), but the *actual* protection comes from a different layer entirely — a primary
+gate already covers it (`requireSuperUser()`), or the underlying Joomla/ATS model independently re-checks
+the correct thing on save (`GroupModel::save()`). When you find a coarse/inconsistent secondary check,
+first trace whether some other layer in the same call chain already enforces the tighter rule before
+treating the coarseness itself as the vulnerability — it's usually a consistency nit, not a gap.
+
+### A proposed fixed resource-consumption cap doesn't fit a feature with legitimately wide input-size variance
+
+Don't propose a fixed byte-size/entry-count cap as "the fix" for a resource-exhaustion concern on a
+feature whose whole purpose is handling inputs of unpredictable, legitimately wide size — e.g. installing
+Joomla extension packages, which range from single-digit kilobytes to hundreds of megabytes in real-world
+use. Any fixed limit is either too high to help or too low and breaks legitimate use. This class of
+finding is usually accepted as an inherent property of the feature (see "How to classify hardening vs
+vulnerability" below) rather than fixed with an arbitrary number. Contrast with a genuinely fixable
+resource-consumption bug — e.g. iterating an unbounded result set with no pagination at all — which *is*
+fixable with a real cap; the test is whether the legitimate input range is itself unbounded, not whether
+a cap is theoretically possible to add.
+
+### "An MCP client might mishandle/render returned raw data unsafely"
+
+Not this server's concern, by design. MCP4j's entire role is to provide a mechanism for retrieving and
+setting Joomla's raw data (article HTML, custom field values, etc.) — whatever a downstream MCP client
+does with that data (e.g. naively rendering returned HTML into a DOM) is the client's responsibility, the
+same way it would be for Joomla's own JSON:API or any other API returning rich-text fields. Don't flag
+"the client could misuse this data" as an XSS/output-sanitization finding against the server; the server
+already isn't sanitizing/escaping on the way out, on purpose, and that's correct for a raw-data-access
+tool.
+
+## Coding convention preference surfaced during fixes
+
+- **Prefer Joomla Framework utility classes over ad hoc PHP for URL/path parsing, even in "pure"
+  framework-free classes.** When fixing a URL-scheme check, the operator's explicit direction was to use
+  `(new \Joomla\Uri\UriImmutable($url))->getScheme())` rather than hand-rolled `parse_url()`/regex/
+  `filter_var(FILTER_VALIDATE_URL)` — described as "the One True Joomla Way." `joomla/uri` (like
+  `joomla/filesystem`'s `Path`, already used elsewhere in this codebase) is a standalone, CMS-bootstrap-
+  free Joomla Framework package suitable for a "Pure: no Joomla CMS" Mapper class — it doesn't require a
+  running Joomla application, so using it doesn't compromise a Mapper's unit-testability, it's just vendored
+  as an explicit Composer dependency like `league/commonmark` already is. Apply this preference proactively
+  to any future ad hoc URL/path/URI parsing this codebase might add, not just when flagged in an audit.
+
 ## Findings verified invalid by a real integration test (not just static reasoning)
+
+When a finding's validity hinges on an assumption about Joomla's runtime behavior rather than something
+directly readable in this codebase's own source (e.g. "would Joomla's model layer stop this?", "does a
+blocked user's token still work?"), the audit repeatedly found it faster and more reliable to write a
+real integration test proving the answer than to reason about it from framework knowledge alone —
+framework-knowledge assumptions turned out right in every case checked so far, but the *specific
+mechanism* was sometimes different from what was assumed (see the `content_articles_create` entry below),
+which matters for writing an accurate finding and an effective fix. Default to building the test.
 
 - **"A blocked user might exploit a self-unblock ACL gap"** (any variant): a Joomla bearer token is
   authentication, standing in for a username/password. Joomla's login chain
