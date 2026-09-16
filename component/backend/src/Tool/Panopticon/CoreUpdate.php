@@ -20,6 +20,8 @@ use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Log\Log;
 use Joomla\Database\ParameterType;
+use Joomla\Filesystem\Exception\FilesystemException;
+use Joomla\Filesystem\Path;
 use Joomla\Http\HttpFactory;
 use Joomla\Registry\Registry;
 
@@ -429,8 +431,21 @@ class CoreUpdate extends AbstractPanopticonTool
 					continue;
 				}
 
-				$fullPath       = JPATH_ROOT . '/' . $row->path;
 				$actualChecksum = '';
+
+				// security.md L1: $row->path comes from a remote checksums feed (fixed getpanopticon.com
+				// URL, not an MCP-caller parameter), but is still hardened defense-in-depth against a
+				// compromised/MITM'd feed steering it outside JPATH_ROOT via a `../` path.
+				try
+				{
+					$fullPath = Path::check(JPATH_ROOT . '/' . $row->path);
+				}
+				catch (FilesystemException $e)
+				{
+					$invalidFiles[] = $row->path;
+
+					continue;
+				}
 
 				if (@is_file($fullPath))
 				{
