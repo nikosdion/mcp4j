@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="MessDetectorOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PHPCSFixerOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PHPCodeSnifferOptionsConfiguration">
+    <option name="highlightLevel" value="WARNING" />
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PhpCodeSniffer">
+    <phpcs_settings>
+      <phpcs_by_interpreter asDefaultInterpreter="true" interpreter_id="71cd668f-a775-4d9d-9bde-a5a3eeab2f57" timeout="30000" />
+    </phpcs_settings>
+  </component>
+  <component name="PhpIncludePathManager">
+    <include_path>
+      <path value="$PROJECT_DIR$/../../master/joomla4" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/composer" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/nette/schema" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/dflydev/dot-access-data" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/symfony/polyfill-php80" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/symfony/deprecation-contracts" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/psr/event-dispatcher" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/nette/utils" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/league/config" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/league/commonmark" />
+      <path value="$PROJECT_DIR$/component/backend/vendor/joomla/uri" />
+    </include_path>
+  </component>
+  <component name="PhpProjectSharedConfiguration" php_language_level="8.1" />
+  <component name="PhpStan">
+    <PhpStan_settings>
+      <phpstan_by_interpreter asDefaultInterpreter="true" interpreter_id="71cd668f-a775-4d9d-9bde-a5a3eeab2f57" timeout="60000" />
+    </PhpStan_settings>
+  </component>
+  <component name="PhpStanOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PhpUnit">
+    <phpunit_settings>
+      <PhpUnitSettings configuration_file_path="$PROJECT_DIR$/phpunit.xml" custom_loader_path="$PROJECT_DIR$/component/backend/vendor/autoload.php" use_configuration_file="true" />
+    </phpunit_settings>
+  </component>
+  <component name="Psalm">
+    <Psalm_settings>
+      <psalm_fixer_by_interpreter asDefaultInterpreter="true" interpreter_id="71cd668f-a775-4d9d-9bde-a5a3eeab2f57" timeout="60000" />
+    </Psalm_settings>
+  </component>
+  <component name="PsalmOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+</project>
