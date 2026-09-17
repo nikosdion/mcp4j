@@ -9,6 +9,6 @@ defined('_JEXEC') || die;
 
 use Joomla\CMS\Language\Text;
 ?>
-<div class="mcp4j-controlpanel">
-	<p><?= Text::_('COM_MCP4J_CONTROLPANEL_INTRO') ?></p>
+<div class="mcp4j-controlpanel card card-body p-4">
+	<p class="m-0"><?= Text::_('COM_MCP4J_CONTROLPANEL_INTRO') ?></p>
 </div>
