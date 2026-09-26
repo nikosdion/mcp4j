@@ -20,7 +20,7 @@ The MCP server can be used by hosted/web chatbots (Claude.ai, ChatGPT, and simil
 
 Authentication reuses Joomla's own API tokens (issued per-user from the Users backend). There is no separate OAuth 2.1 authorisation server: an MCP client configured with a given token simply acts as whichever Joomla user issued it, authorised through that user's normal Joomla ACL.
 
-For more information about the design rationale, in particular how MCP session state is kept independent of Joomla's own ephemeral API session, please consult [CLAUDE.md](CLAUDE.md). I opted to add the architecture information there as I am using generative AI code assistants to aid in testing, bug hunting, and security auditing. These are exactly the kind of tasks needing access to the architectural decisions made when building this extension.
+For more information about the design rationale, in particular how MCP session state is kept independent of Joomla's own ephemeral API session, please consult [AGENTS.md](AGENTS.md). I opted to add the architecture information there as I am using generative AI code assistants to aid in testing, bug hunting, and security auditing. These are exactly the kind of tasks needing access to the architectural decisions made when building this extension.
 
 ### Packaging
 

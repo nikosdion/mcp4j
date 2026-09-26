@@ -1,4 +1,4 @@
-# pkg_mcp4j
+# AGENTS.md — pkg_mcp4j
 
 A Joomla 4+ extension package implementing a **remote, HTTP-based MCP server**
 that runs *inside* a Joomla site, as opposed to the sibling project
@@ -33,7 +33,7 @@ site's HTTP requests. So instead of a standalone server, this is:
   client using a given token simply acts as whichever Joomla user issued it,
   authorised via that user's normal Joomla ACL. This is a deliberate scope
   decision, not an oversight — see
-  [.claude/mcp-session-handling.md](.claude/mcp-session-handling.md) for the
+  [.claude/memory/mcp-session-handling.md](.claude/memory/mcp-session-handling.md) for the
   reasoning.
 
 ## The hard part: MCP session state vs. Joomla's ephemeral API session
@@ -45,7 +45,7 @@ it did, an MCP HTTP client doesn't send Joomla session cookies, only the
 session concepts must **not** be conflated. Full writeup, chosen approach (a
 dedicated `#__mcp4j_sessions` table, decoupled from Joomla's session entirely),
 and open questions are in
-**[.claude/mcp-session-handling.md](.claude/mcp-session-handling.md)** — read
+**[.claude/memory/mcp-session-handling.md](.claude/memory/mcp-session-handling.md)** — read
 that before touching anything session-related.
 
 ## Status
@@ -83,13 +83,13 @@ tool class under `tests/integration/src/Tests/<Category>/`) across the full Joom
 original `joomla-mcp-php` project and fails on any undocumented drift.
 
 See `README.md` for the user-facing feature list, connection instructions, security model, and the
-"Differences from joomla-mcp-php" section. See `.claude/mcp-session-handling.md` for MCP session-vs-
+"Differences from joomla-mcp-php" section. See `.claude/memory/mcp-session-handling.md` for MCP session-vs-
 Joomla-session handling specifically.
 
 ## Security audits
 
 Before any security audit, security review, or `audit-*` skill run — and before reporting any
-finding from one — you MUST read `.claude/security-audit-triage.md` — the actors that are out
+finding from one — you MUST read `.claude/memory/security-audit-triage.md` — the actors that are out
 of scope, finding classes already ruled invalid, controls already in place, and how to
 classify hardening versus vulnerabilities.
 
@@ -127,3 +127,39 @@ ones most likely to bite in any future change to this codebase:
   the two narrow, explicitly-permitted exceptions (moving an optional parameter after a required one;
   a parameter type that's a documented bug in the original) — see `tests/parity/compare-tool-surface.php`
   for the enforced, exhaustive list.
+
+## Git: commit and tag outside the sandbox
+
+Commits and tags are always signed, with a key held in 1Password. The 1Password signing agent is reached
+over a local socket that agent sandboxes do not expose, so a sandboxed `git commit` or `git tag` **always**
+fails (e.g. `error: 1Password: Could not connect to socket. Is the agent running?`).
+
+Run every `git commit` and `git tag` **outside the sandbox from the first attempt** — in Claude Code with
+`dangerouslyDisableSandbox: true`, in other harnesses with their equivalent unsandboxed / escalated
+execution. Do not try the sandboxed form first, do not diagnose the failure, and never work around it
+with `--no-gpg-sign`, `-c commit.gpgsign=false` or unsigned tags.
+
+## Project memory
+
+Project memory lives in `.claude/memory/`, committed with the code, so that it is shared across machines
+and across agentic harnesses (Claude Code, Codex, Qwen Code, Kimi Code, Junie, …). Read the relevant file
+**before** starting work that matches its trigger:
+
+| Before you… | Read |
+|---|---|
+| Touch MCP session handling, or anything about how `Mcp-Session-Id` relates to Joomla's own session | `.claude/memory/mcp-session-handling.md` |
+| Run a security audit/review, or report a finding from one | `.claude/memory/security-audit-triage.md` |
+
+### Recording new memories
+
+This is the **default and only** place for project memory. Do not write memories for this project to a
+harness's private memory store (such as Claude Code's auto-memory under `~/.claude/projects/`); write
+them here instead:
+
+- Add to the existing topic file when one fits; otherwise create a new kebab-case `.md` file named after
+  the topic, and add a row for it to the table above with a concrete trigger.
+- Plain Markdown, no frontmatter. State the rule, then **Why:** (the reason or incident behind it) and
+  **How to apply:**. Link related files with relative Markdown links.
+- Don't record what the code, Git history or an existing `AGENTS.md` already says — update that
+  `AGENTS.md` instead when the rule belongs there. Remove or correct entries that turn out wrong.
+- These files are committed: no secrets, credentials, customer data or personal details.
