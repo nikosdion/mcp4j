@@ -57,6 +57,18 @@ load_env_file() {
 	. ./.env
 	set +a
 
+	# The Joomla/PHP versions under test are committed, not configured: the shared matrix in buildfiles
+	# and this directory's matrix.env (which adds Joomla 4.4) are sourced AFTER .env so that a stale .env
+	# on any machine cannot shadow them. A name in ENV_OVERRIDE_NAMES set by the caller still wins.
+	local matrix; matrix="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/buildfiles/docker/e2e/matrix"
+	[ -f "${matrix}" ] || die "${matrix} not found. Check out akeeba/buildfiles next to this repository."
+	set -a
+	# shellcheck source=/dev/null
+	. "${matrix}"
+	# shellcheck source=/dev/null
+	if [ -f ./matrix.env ]; then . ./matrix.env; fi
+	set +a
+
 	for name in ${ENV_OVERRIDE_NAMES}; do
 		remembered="REMEMBERED_${name}"
 

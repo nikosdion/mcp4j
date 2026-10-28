@@ -44,7 +44,8 @@ tests/integration/run-tests.sh 6 -- --filter=SessionLifecycleTest
 ```
 
 The first run creates `docker/.env` from `docker/env.dist` — edit it if you need different ports,
-image versions, or to change `JOOMLA_MATRIX` itself. Downloaded Joomla packages are cached under
+image versions. `JOOMLA_MATRIX` itself is committed (`docker/matrix.env`, `buildfiles/docker/e2e/matrix`).
+Downloaded Joomla packages are cached under
 `tests/integration/inbox/` (gitignored) so repeated runs don't re-download them. `pkg_mcp4j` itself is
 built once per `run-tests.sh` invocation and reused across every entry in the run, since the package
 doesn't vary by Joomla/PHP version.
@@ -84,8 +85,10 @@ and recreated, and the web root is wiped, at the start of every entry — not on
 
 ## Why these versions
 
-`JOOMLA_MATRIX` in `docker/env.dist` (`4.4:8.1 5.4:8.1 6:8.5`) is the full range MCP4j declares support
-for, not a spread chosen to exercise a specific version-gated branch — there isn't one yet (no code
+`JOOMLA_MATRIX` is committed, not configured: the shared `docker/e2e/matrix` of the sibling `buildfiles`
+repository supplies `5.4:8.1 6:8.5`, and `docker/matrix.env` here adds `4.4:8.1`, giving `4.4:8.1 5.4:8.1 6:8.5`.
+Setting it in `docker/.env` has no effect (a value in the process environment still does). It is the full
+range MCP4j declares support for, not a spread chosen to exercise a specific version-gated branch — there isn't one yet (no code
 in this repo currently branches on `JVERSION`). `script.mcp4j.php` declares `$minimumJoomla = '4.0.0'`
 and `$maximumJoomla = '6.3'` (exclusive); 4.4 and 5.4 are the final, longest-lived minor release of
 each of the two closed majors in that range, and bare `6` always resolves to the latest Joomla 6
@@ -95,9 +98,10 @@ is actually current for the open-ended entries every time it runs.
 The PHP pairing follows the same "what real users are actually running" logic rather than testing
 every major against the same PHP version: Joomla 4.4 and 5.4 are paired with PHP 8.1 (comfortably
 within both majors' supported PHP range and the oldest version this project's own `composer.json`
-still declares support for — see `require.php`), while latest Joomla 6 is paired with PHP 8.5, the
+still declares support for — see `require.php`; this is why 4.4 is not paired with its own PHP 7.4 floor
+as Akeeba Backup and Admin Tools do), while latest Joomla 6 is paired with PHP 8.5, the
 newest PHP release that exists at the time of writing (`composer.json` permits up to, but excluding,
-8.7 — 8.6 simply hasn't shipped yet). Update the `6:...` entry's PHP side once 8.6 ships and this
+8.7 — 8.6 simply hasn't shipped yet). Update the shared matrix's `6:...` entry once 8.6 ships and this
 project has confirmed compatibility with it; don't just bump it reflexively the day it's released.
 
 A green run against a single Joomla version still proves less than it looks — the `<api>`
@@ -120,8 +124,8 @@ COMPOSE_PROJECT_NAME=mcp4j-itest-p04 WEB_PORT=8184 tests/integration/run-tests.s
 Both `run-tests.sh` and `quick.sh` let a `COMPOSE_PROJECT_NAME`/`WEB_PORT` (also `JOOMLA_MATRIX` /
 `PHP_VERSION`) already set in the *process* environment win over the same name's value in `docker/.env`
 — the file's own defaults (`mcp4j-itest` / `8180`) are only ever a fallback for a bare invocation with
-nothing set. A worktree's `docker/.env` may also just set these directly (`COMPOSE_PROJECT_NAME=...` /
-`WEB_PORT=...` appended to the file) if you'd rather not repeat them on every invocation; either way
+nothing set. A worktree's `docker/.env` may also just set the first two directly (`COMPOSE_PROJECT_NAME=...` /
+`WEB_PORT=...` appended to the file; `JOOMLA_MATRIX` and `PHP_VERSION` are committed and ignored there) if you'd rather not repeat them on every invocation; either way
 works, the environment always wins.
 
 The database and web containers, the bind-mounted `www/` docroot, and `docker/.tokens` are all scoped

@@ -7,7 +7,7 @@
 # (phpunit-integration.xml) against it over real HTTP.
 #
 # Usage:
-#   tests/integration/run-tests.sh                 # the whole JOOMLA_MATRIX (docker/.env)
+#   tests/integration/run-tests.sh                 # the whole JOOMLA_MATRIX
 #   tests/integration/run-tests.sh 6                # only Joomla 6 (PHP from JOOMLA_MATRIX, else PHP_VERSION)
 #   tests/integration/run-tests.sh 4.4 5.4          # Joomla 4.4 and 5.4
 #   tests/integration/run-tests.sh 6 --keep         # leave the stack running
@@ -16,10 +16,10 @@
 # Arguments before a bare `--` that look like a Joomla version (a full
 # version, a branch, or a bare major — 4, 4.4, 5.4.1, 6, ...) select which
 # Joomla versions to test. With none given, every `joomla:php` pair in
-# JOOMLA_MATRIX (docker/env.dist, copied to docker/.env on first run) is
-# tested — see tests/integration/README.md, "Why these versions", for why
+# JOOMLA_MATRIX (committed: buildfiles/docker/e2e/matrix plus docker/matrix.env,
+# both sourced after docker/.env) is tested — see tests/integration/README.md, "Why these versions", for why
 # it contains exactly the entries it does. A version given explicitly that
-# isn't in JOOMLA_MATRIX falls back to PHP_VERSION from the same file.
+# isn't in JOOMLA_MATRIX falls back to the matrix's default PHP_VERSION.
 #
 # `--keep` leaves the Docker stack running after the run instead of tearing
 # it down (only meaningful for a single-version run — see run_matrix()).
@@ -87,7 +87,7 @@ done
 [ -f .env ] || { cp env.dist .env; log "Created .env from env.dist"; }
 load_env_file
 
-: "${JOOMLA_MATRIX:?JOOMLA_MATRIX is not set (see docker/env.dist)}"
+: "${JOOMLA_MATRIX:?JOOMLA_MATRIX is not set (see docker/matrix.env and buildfiles/docker/e2e/matrix)}"
 : "${DB_IMAGE:=mariadb:11.4}"
 : "${DB_ROOT_PASSWORD:=rootpw}"
 : "${DB_NAME:=joomla_test}"
@@ -95,7 +95,6 @@ load_env_file
 : "${DB_PASSWORD:=rootpw}"
 : "${DB_PREFIX:=jtest_}"
 : "${WEB_PORT:=8180}"
-: "${PHP_VERSION:=8.3}"
 
 # Compose precedence is `-p` (not used here) > COMPOSE_PROJECT_NAME > the compose file's own `name:`
 # (mcp4j-itest, see docker-compose.yml) — export a default so every DC call below is pinned to a
