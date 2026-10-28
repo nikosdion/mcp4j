@@ -370,8 +370,13 @@ provision_scoped_manager() {
 
 	log "Provisioning a Joomla API token for ${SCOPED_MANAGER_USER}"
 	local out
-	out="$(DC exec -T web php /app/tests/integration/docker/provision-token.php "${SCOPED_MANAGER_USER}")" \
-		|| die "ATS scoped-manager token generation failed."
+	if [ -d "${WWW_DIR}/administrator/components/com_ats" ]; then
+		out="$(DC exec -T web php /app/tests/integration/docker/provision-token.php "${SCOPED_MANAGER_USER}")" \
+			|| die "ATS scoped-manager token generation failed."
+	else
+		# ATS 5.x does not install on Joomla 4 (its floor is 5.4), so on a 4.4 run there is no such user.
+		out=""
+	fi
 
 	SCOPED_MANAGER_TOKEN="$(printf '%s\n' "${out}" | tr -d '\r' | awk 'NF { line = $0 } END { print line }')"
 
