@@ -4,7 +4,7 @@
 #
 # Sourced by run-tests.sh. Ported (mostly verbatim) from
 # ~/Projects/panopticon/panopticon-connector/tests/integration/lib.sh, itself
-# ported from ~/Projects/j4-akeeba/admintools/tests/integration/docker/run.sh —
+# ported from ~/Projects/j5-akeeba/admintools/tests/integration/docker/run.sh —
 # this repository's own single-`web`-container stack needs the same shape.
 #
 # Functions provided:

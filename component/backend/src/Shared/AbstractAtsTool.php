@@ -233,7 +233,7 @@ abstract class AbstractAtsTool extends AbstractTool
 
 	/**
 	 * Re-derives exactly the `'view'` boolean `Permissions::getTicketPrivileges()` computes (see that
-	 * method's own docblock in `~/Projects/j4-akeeba/ats/component/backend/src/Helper/Permissions.php`),
+	 * method's own docblock in `~/Projects/j5-akeeba/ats/component/backend/src/Helper/Permissions.php`),
 	 * but from a plain object carrying `id`/`catid`/`created_by`/`public` rather than a real `TicketTable`
 	 * instance.
 	 *
