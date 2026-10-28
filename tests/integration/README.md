@@ -31,7 +31,7 @@ changes.
 - `phing`, to build the `pkg_mcp4j-*.zip` the harness installs — requires the sibling
   `~/Projects/dionysopoulos/buildfiles` checkout `build.xml` imports (already the case for anyone
   working in this repo's normal layout).
-- `curl`, `jq`, `gunzip`, `unzip` on the host (used to resolve/download Joomla releases).
+- `unzip` and `getcms` from the sibling `../buildfiles` checkout (run `composer install` there), used to resolve/download Joomla releases.
 
 ## Quick start
 
